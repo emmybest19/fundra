@@ -81,7 +81,7 @@ Details in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 src/
 ├── config/        environment, database, redis, logger
 ├── common/        errors, types, utils, validators, constants
-├── middleware/    auth, error, rate-limit, request-id, validation
+├── middleware/    auth, error, rate-limit, request-id, request-logger, security, validation
 ├── modules/       auth · users · kyc · wallets · ledger · transactions · transfers
 │                  payments · beneficiaries · notifications · webhooks · audit · admin
 ├── jobs/          BullMQ queues and workers
@@ -179,6 +179,7 @@ Configuration lives in a local `.env` file, which git ignores. `src/config/env.t
 | `LOG_LEVEL` | no | `info` (`silent` under test) | `fatal` · `error` · `warn` · `info` · `debug` · `trace` · `silent` |
 | `DATABASE_URL` | **yes** | — | `postgresql://user:pass@localhost:5432/fundra?schema=public` |
 | `REDIS_URL` | **yes** | — | `redis://:pass@localhost:6379` (`rediss://` for TLS) |
+| `CORS_ORIGINS` | no | *(empty: no browser origin allowed)* | Comma-separated exact origins, e.g. `https://app.fundra.dev,http://localhost:5173` |
 | `POSTGRES_USER` · `POSTGRES_PASSWORD` · `POSTGRES_DB` · `REDIS_PASSWORD` | for Docker | — | Read by `docker-compose.yml`, not the app |
 | `POSTGRES_PORT` · `REDIS_PORT` | no | `5432` · `6379` | Host ports used by `docker-compose.yml` |
 

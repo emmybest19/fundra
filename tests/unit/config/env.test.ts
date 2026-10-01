@@ -25,8 +25,25 @@ describe('parseEnv', () => {
       PORT: 3000,
       DATABASE_URL: valid.DATABASE_URL,
       REDIS_URL: valid.REDIS_URL,
+      CORS_ORIGINS: [],
     });
   });
+
+  it('parses CORS_ORIGINS as a trimmed list of origins', () => {
+    const result = parseEnv({
+      ...valid,
+      CORS_ORIGINS: ' https://app.fundra.dev , http://localhost:5173,',
+    });
+
+    expect(result.CORS_ORIGINS).toEqual(['https://app.fundra.dev', 'http://localhost:5173']);
+  });
+
+  it.each(['https://app.fundra.dev/', 'https://app.fundra.dev/path', 'ftp://files.dev', '*'])(
+    'rejects CORS_ORIGINS entry %s',
+    (origin) => {
+      expect(issuesFor({ ...valid, CORS_ORIGINS: origin })[0]).toMatch(/^CORS_ORIGINS/);
+    },
+  );
 
   it('coerces PORT to a number', () => {
     expect(parseEnv({ ...valid, PORT: '8080' }).PORT).toBe(8080);

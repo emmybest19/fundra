@@ -60,7 +60,7 @@ fundra/
 ├── src/
 │   ├── config/        env.ts · database.ts · redis.ts · logger.ts
 │   ├── common/        constants/ · errors/ · types/ · utils/ · validators/
-│   ├── middleware/    auth · error · rate-limit · request-id · validation
+│   ├── middleware/    auth · error · rate-limit · request-id · request-logger · security · validation
 │   ├── modules/       13 feature modules (see §4)
 │   ├── jobs/          queues.ts · workers.ts · jobs/
 │   ├── routes/        index.ts  (mounts module routers at /api/v1)
@@ -149,22 +149,24 @@ flowchart TD
 
 ---
 
-## 5. Request lifecycle — *Designed*
+## 5. Request lifecycle — *Partly built*
 
 Middleware order in `app.ts`:
 
-| # | Stage | Why here |
-|---|---|---|
-| 1 | `request-id` | Every later log line and error carries the ID |
-| 2 | `pino-http` | Access log, with redaction |
-| 3 | `helmet` | Security headers on every response, errors included |
-| 4 | `cors` | Explicit origin allow-list |
-| 5 | **webhooks router** | Mounted **before** JSON parsing: signature checks need the raw bytes |
-| 6 | `express.json({ limit })` | Bounded body size |
-| 7 | `rate-limit` | Redis-backed, per IP and per user; stricter on auth and money routes |
-| 8 | `/api/v1` router | Per route: `authenticate → authorize(permission) → validate(schema) → controller` |
-| 9 | 404 handler | |
-| 10 | `error` middleware | Maps errors to the error envelope; never leaks internals |
+| # | Stage | Status | Why here |
+|---|---|---|---|
+| 1 | `requestId` | Built | Every later log line and error carries the ID. A caller's `X-Request-Id` is reused only if it matches `[A-Za-z0-9._:-]{1,128}`; otherwise a UUID is generated, which blocks log injection |
+| 2 | `requestLogger` (pino-http) | Built | One line per request (method, URL, status, duration; no headers). `error` for 5xx with the real error and stack, `warn` for 4xx, `info` otherwise; `/health*` is not logged |
+| 3 | `securityHeaders` (helmet) | Built | Security headers on every response, errors included; removes `X-Powered-By` |
+| 4 | `corsPolicy` | Built | Exact-origin allow-list from `CORS_ORIGINS`, empty by default (no browser origin allowed). Allows the `Authorization`, `Idempotency-Key` and `X-Request-Id` headers; exposes `X-Request-Id` |
+| 5 | **webhooks router** | Stage 15 | Mounted **before** JSON parsing: signature checks need the raw bytes |
+| 6 | `jsonBody` | Built | `express.json` with a 100 kB limit; malformed JSON → 400, oversized → 413 |
+| 7 | `rate-limit` | Stage 6 | Redis-backed, per IP and per user; stricter on auth and money routes |
+| 8 | `/api/v1` router | Per module | Per route: `authenticate → authorize(permission) → validate(schema) → controller` |
+| 9 | `notFoundHandler` | Built | Unmatched routes get the standard `NOT_FOUND` body |
+| 10 | `errorHandler` | Built | `normalizeError` → `errorBody`; for 5xx it hands the real error to the request logger (`res.err`), so each failure is logged once, with request context |
+
+Implementation: [src/middleware/](../src/middleware/).
 
 ---
 
@@ -462,7 +464,7 @@ This reflects the repository as it stands, not the design.
 
 | Gap | Impact |
 |---|---|
-| Application code limited to `config/` (env, logger) and `common/` (errors, response envelopes); the remaining `.ts` files are placeholders | No HTTP server yet |
+| Application code limited to `config/` (env, logger), `common/` (errors, response envelopes) and the core middleware; the remaining `.ts` files are placeholders | Middleware is tested in a test-only app; `app.ts`/`server.ts` don't exist yet, so there's no runnable server |
 | `prisma/schema.prisma` has no datasource or generator, and there's no `prisma.config.ts` | Prisma 7 can't generate a client or run migrations |
 | Docker isn't installed on the development machine; PostgreSQL and Redis aren't available | Integration work is blocked until they are set up |
 | No `.env.example` (removed by choice) | New contributors can't see which variables are required; `config/env.ts` validation will be the only source of truth |

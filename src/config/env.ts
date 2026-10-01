@@ -3,12 +3,38 @@ import { z } from 'zod';
 
 export const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
 
+function isOrigin(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (url.protocol === 'https:' || url.protocol === 'http:') && url.origin === value;
+  } catch {
+    return false;
+  }
+}
+
+/** Comma-separated list of exact browser origins, e.g. `https://app.fundra.dev,http://localhost:5173`. */
+const originList = z
+  .string()
+  .transform((value) =>
+    value
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter((origin) => origin !== ''),
+  )
+  .pipe(
+    z.array(
+      z.string().refine(isOrigin, 'Each entry must be an origin like https://app.example.com'),
+    ),
+  );
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
   LOG_LEVEL: z.enum(LOG_LEVELS).optional(),
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
   REDIS_URL: z.url({ protocol: /^rediss?$/ }),
+  // Empty by default: no browser origin may call the API until one is listed.
+  CORS_ORIGINS: originList.default([]),
 });
 
 export type Env = Readonly<z.infer<typeof envSchema>>;
