@@ -35,6 +35,8 @@ const envSchema = z.object({
   REDIS_URL: z.url({ protocol: /^rediss?$/ }),
   // Empty by default: no browser origin may call the API until one is listed.
   CORS_ORIGINS: originList.default([]),
+  // Number of reverse proxies in front of the app. 0 trusts none, so X-Forwarded-For can't spoof client IPs.
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
 });
 
 export type Env = Readonly<z.infer<typeof envSchema>>;

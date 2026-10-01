@@ -4,7 +4,7 @@ A production-style fintech backend for a digital NGN wallet platform. It is buil
 
 Built with Node.js, TypeScript, Express, PostgreSQL, Prisma, Redis and BullMQ as a modular monolith.
 
-> **Status: design complete, implementation not started.** See [Status](#status).
+> **Status: in development.** The app skeleton runs; business modules are next. See [Status](#status).
 
 ---
 
@@ -103,15 +103,14 @@ docs/              project definition, architecture, case study, API, security
 | Decisions D1–D6, license | Done ([ARCHITECTURE.md §14](docs/ARCHITECTURE.md#14-decisions)) |
 | Architecture | Done ([ARCHITECTURE.md](docs/ARCHITECTURE.md)) |
 | Dependencies | Installed |
-| Module scaffold | Done; files hold responsibility comments only |
-| Database/ERD, ledger design, API spec | Next |
-| TypeScript config (strict, ESM) | Done |
-| npm scripts (dev, build, start, typecheck) | Done |
-| Linting + formatting (ESLint, Prettier) | Done |
-| Test runner (Vitest + Supertest) | Done; no tests written yet |
-| Prisma config | Not started |
+| Module scaffold | Done; module files hold responsibility comments only |
+| Tooling: TypeScript (strict, ESM), scripts, ESLint, Prettier, Vitest | Done |
+| App skeleton: config, logging, errors, middleware, server, health, shutdown | Done (108 unit tests) |
 | Docker, PostgreSQL, Redis | `docker-compose.yml` written; not yet run (Docker Desktop not installed) |
-| Modules, tests, CI, deployment | Not started |
+| Database/ERD, Prisma, ledger design | Next (Stage 5) |
+| Business modules, CI, deployment | Not started |
+
+Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).
 
 Known gaps are listed in [ARCHITECTURE.md §13](docs/ARCHITECTURE.md#13-known-debt-and-current-gaps).
 
@@ -140,6 +139,16 @@ docker compose down -v   # stop and delete all local data
 ```
 
 Both services listen on `127.0.0.1` only, so they aren't reachable from your network. `docker-compose.yml` reads these variables from `.env`: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, and optionally `POSTGRES_PORT` and `REDIS_PORT`.
+
+Run the API:
+
+```bash
+npm run dev                                   # http://localhost:3000, restarts on file changes
+curl http://localhost:3000/health/live        # {"status":"ok"}
+curl http://localhost:3000/health/ready       # {"status":"ready","checks":{}}
+```
+
+Press Ctrl+C to stop gracefully: in-flight requests finish before the process exits.
 
 ### Scripts
 
@@ -180,6 +189,7 @@ Configuration lives in a local `.env` file, which git ignores. `src/config/env.t
 | `DATABASE_URL` | **yes** | — | `postgresql://user:pass@localhost:5432/fundra?schema=public` |
 | `REDIS_URL` | **yes** | — | `redis://:pass@localhost:6379` (`rediss://` for TLS) |
 | `CORS_ORIGINS` | no | *(empty: no browser origin allowed)* | Comma-separated exact origins, e.g. `https://app.fundra.dev,http://localhost:5173` |
+| `TRUST_PROXY_HOPS` | no | `0` | Number of reverse proxies in front of the app (0–10). Keep `0` unless behind a load balancer; otherwise clients could fake their IP with `X-Forwarded-For` |
 | `POSTGRES_USER` · `POSTGRES_PASSWORD` · `POSTGRES_DB` · `REDIS_PASSWORD` | for Docker | — | Read by `docker-compose.yml`, not the app |
 | `POSTGRES_PORT` · `REDIS_PORT` | no | `5432` · `6379` | Host ports used by `docker-compose.yml` |
 

@@ -27,11 +27,11 @@ Legend: `[x]` done · `[ ]` to do
 - [x] ESLint 10 (strict type-checked + money/config rules) + Prettier 3 (+ `lint`, `format` scripts)
 - [x] Vitest 5 (unit / integration / e2e projects, v8 coverage) + Supertest (+ `test` scripts)
 
-### Stage 4 — App skeleton
+### Stage 4 — App skeleton ✅
 - [x] `config/env.ts` (Zod-validated env), `config/logger.ts` (Pino + redaction), 24 unit tests
 - [x] `common/errors` (error classes, code catalogue, `normalizeError`) + response envelope, 35 unit tests
 - [x] Request-ID, request logger, error and 404 middleware; helmet, CORS allow-list, 100 kB JSON limit
-- [ ] `app.ts`, `server.ts`, graceful shutdown, `/health/live` + `/health/ready`
+- [x] `app.ts`, `server.ts`, graceful shutdown, `/health/live` + `/health/ready` (readiness checks registered in Stages 5–6)
 
 ### Stage 5 — Database design
 - [ ] ERD: all entities, keys, indexes, constraints
@@ -39,9 +39,11 @@ Legend: `[x]` done · `[ ]` to do
 - [ ] Full schema + first migration
 - [ ] Ledger triggers (no update/delete, balanced transactions)
 - [ ] Seed: roles, permissions, system ledger accounts
+- [ ] Register the `database` readiness check + close Prisma on shutdown
 
 ### Stage 6 — Shared infrastructure
 - [ ] `config/redis.ts` + rate-limit middleware
+- [ ] Register the `redis` readiness check + close Redis on shutdown
 - [ ] Validation middleware (Zod)
 - [ ] Audit service
 - [ ] Idempotency service

@@ -26,6 +26,7 @@ describe('parseEnv', () => {
       DATABASE_URL: valid.DATABASE_URL,
       REDIS_URL: valid.REDIS_URL,
       CORS_ORIGINS: [],
+      TRUST_PROXY_HOPS: 0,
     });
   });
 
@@ -80,6 +81,8 @@ describe('parseEnv', () => {
     ['PORT', 'abc'],
     ['NODE_ENV', 'staging'],
     ['LOG_LEVEL', 'verbose'],
+    ['TRUST_PROXY_HOPS', '-1'],
+    ['TRUST_PROXY_HOPS', 'true'],
   ])('rejects invalid %s=%s', (name, value) => {
     const issues = issuesFor({ ...valid, [name]: value });
 

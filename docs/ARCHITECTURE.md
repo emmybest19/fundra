@@ -82,7 +82,6 @@ Planned additions, created when the relevant module is built:
 | `src/modules/payments/payment.schema.ts` | Zod schemas (missing from the initial layout) |
 | `src/common/idempotency/` | Idempotency service + middleware |
 | `src/common/outbox/` | Transactional outbox writer |
-| `src/modules/health/` | Liveness / readiness endpoints |
 | `prisma.config.ts` | Required by Prisma 7 for datasource configuration |
 
 ---
@@ -444,7 +443,19 @@ Detailed controls will be documented in [security.md](security.md) as each modul
 
 **Configuration:** `config/env.ts` validates `process.env` with Zod at startup. The process refuses to start if config is missing or invalid.
 
-**Observability:** JSON logs carrying `requestId`, `userId` and module; `/health/live` and `/health/ready` endpoints; graceful shutdown that drains HTTP, workers, DB and Redis.
+**Observability and lifecycle (*Built*, except where noted):**
+- **Logs:** JSON lines carrying `requestId`; `userId` is added with auth in Stage 7.
+- **`GET /health/live`:** 200 `{ "status": "ok" }` while the process runs.
+- **`GET /health/ready`:** runs the registered dependency checks in parallel, each with a 2 s timeout. Returns 200 `ready`, or 503 `unavailable` / `draining`, with per-check `up`/`down` only; failure reasons go to the logs. **No checks are registered yet:** the database check is added in Stage 5 and Redis in Stage 6, together with their connections.
+- Health responses are infrastructure, not API: they aren't versioned, aren't wrapped in the envelope, are sent with `Cache-Control: no-store`, and aren't access-logged.
+- **Graceful shutdown** (`src/common/utils/shutdown.ts`) on SIGTERM/SIGINT:
+  1. Readiness reports `draining`.
+  2. The server stops accepting connections; in-flight requests finish.
+  3. Cleanup hooks run in order (queues, Redis, database as they are added); a failing hook doesn't stop the others.
+  4. The process exits 0.
+  
+  After 10 s the remaining connections are force-closed and the exit code is 1. A hung cleanup triggers a hard exit 5 s later. A second signal exits immediately. Uncaught exceptions and unhandled rejections are logged at `fatal` and go through the same path with exit code 1. If the port is taken at startup, it logs `fatal` and exits 1.
+- **Windows note:** `kill`/`Stop-Process` terminate a Node process without delivering a signal. Graceful shutdown happens on Ctrl+C locally, and on SIGTERM from Docker and orchestrators.
 
 **Testing:**
 
@@ -464,7 +475,8 @@ This reflects the repository as it stands, not the design.
 
 | Gap | Impact |
 |---|---|
-| Application code limited to `config/` (env, logger), `common/` (errors, response envelopes) and the core middleware; the remaining `.ts` files are placeholders | Middleware is tested in a test-only app; `app.ts`/`server.ts` don't exist yet, so there's no runnable server |
+| A running server with health endpoints and no business modules yet; the module `.ts` files are placeholders | `/api/v1` returns 404 for every path until modules are mounted |
+| `/health/ready` has no dependency checks registered | It reports `ready` even though nothing connects to PostgreSQL or Redis yet. Checks arrive with the connections in Stages 5–6 |
 | `prisma/schema.prisma` has no datasource or generator, and there's no `prisma.config.ts` | Prisma 7 can't generate a client or run migrations |
 | Docker isn't installed on the development machine; PostgreSQL and Redis aren't available | Integration work is blocked until they are set up |
 | No `.env.example` (removed by choice) | New contributors can't see which variables are required; `config/env.ts` validation will be the only source of truth |
