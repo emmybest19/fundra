@@ -15,14 +15,28 @@ afterEach(() => {
   }
 });
 
-/** A real HTTP server with a slow route and a route that never answers. */
-async function startServer(): Promise<{ server: Server; url: string }> {
+/**
+ * A real HTTP server with a slow route and a route that never answers.
+ * `arrived` resolves once a request has reached a handler, so tests start shutdown
+ * only after the request is truly in flight, not after a guessed delay.
+ */
+async function startServer(): Promise<{
+  server: Server;
+  url: string;
+  arrived: Promise<undefined>;
+}> {
+  const { promise: arrived, resolve } = Promise.withResolvers<undefined>();
+  const markArrived = () => {
+    resolve(undefined);
+  };
   const app = express();
   app.get('/slow', async (_req, res) => {
+    markArrived();
     await delay(200);
     res.json({ done: true });
   });
   app.get('/hang', () => {
+    markArrived();
     // never responds
   });
 
@@ -30,12 +44,12 @@ async function startServer(): Promise<{ server: Server; url: string }> {
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
-  return { server, url: `http://127.0.0.1:${String(port)}` };
+  return { server, url: `http://127.0.0.1:${String(port)}`, arrived };
 }
 
 describe('createShutdown', () => {
   it('lets in-flight requests finish, refuses new ones, cleans up, then exits 0', async () => {
-    const { server, url } = await startServer();
+    const { server, url, arrived } = await startServer();
     const order: string[] = [];
     const exit = vi.fn();
     const shutdown = createShutdown({
@@ -47,7 +61,7 @@ describe('createShutdown', () => {
     });
 
     const inFlight = fetch(`${url}/slow`);
-    await delay(50); // let the request reach the server
+    await arrived;
     const done = shutdown('SIGTERM');
 
     const res = await inFlight;
@@ -60,12 +74,12 @@ describe('createShutdown', () => {
   });
 
   it('force-closes connections that outlive the timeout and exits 1', async () => {
-    const { server, url } = await startServer();
+    const { server, url, arrived } = await startServer();
     const exit = vi.fn();
     const shutdown = createShutdown({ server, logger, timeoutMs: 100, exit });
 
     const hung = fetch(`${url}/hang`);
-    await delay(50);
+    await arrived;
     const started = Date.now();
     await shutdown('SIGTERM');
 

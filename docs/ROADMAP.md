@@ -37,7 +37,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] ERD: all entities, keys, indexes, constraints ([DATABASE.md](DATABASE.md), 26 tables)
 - [x] Prisma 7 setup (`prisma.config.ts`, adapter-pg) + `config/database.ts` (real connection test pending Docker)
 - [x] Full schema + first migration (26 tables, 41 CHECKs, 7 partial indexes; verified on PostgreSQL 18.3 via PGlite, apply to Docker DB pending)
-- [ ] Ledger triggers (no update/delete, balanced transactions)
+- [x] Ledger triggers (no update/delete/truncate, balanced at commit; 19 checks on PostgreSQL 18.3 via PGlite)
 - [ ] Seed: roles, permissions, system ledger accounts
 - [ ] Register the `database` readiness check + close Prisma on shutdown
 
@@ -49,7 +49,7 @@ Legend: `[x]` done · `[ ]` to do
 - [ ] Idempotency service
 - [ ] Outbox writer
 - [ ] Testcontainers harness for integration tests
-- [ ] Port the 30 migration constraint checks (Stage 5) into integration tests
+- [ ] Port the 49 migration checks from Stage 5 (30 constraints + 19 triggers) into integration tests
 
 ### Stage 7 — Auth
 - [ ] Register, login, logout (Argon2id)
@@ -131,6 +131,7 @@ Legend: `[x]` done · `[ ]` to do
 ### Stage 25 — Deployment
 - [ ] AWS: app hosting, managed Postgres, Redis, S3 for KYC docs, logs
 - [ ] Production config + secrets
+- [ ] App connects as a non-owner DB role (no `TRUNCATE`/`ALTER`), so ledger triggers can't be disabled from the app
 
 ### Stage 26 — Final documentation
 - [ ] Fill in [security.md](security.md)

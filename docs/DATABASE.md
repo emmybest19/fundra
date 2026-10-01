@@ -2,7 +2,7 @@
 
 > The PostgreSQL schema: every table, column, key, index and constraint, and why it exists. Written for developers implementing the Prisma schema and migrations (Stage 5) and for reviewers checking the financial model. The ledger concepts behind it are in [ARCHITECTURE.md §7](ARCHITECTURE.md#7-financial-core--designed).
 
-**Status: Implemented as schema + migration (2026-10-01).** All 26 tables are in [prisma/schema.prisma](../prisma/schema.prisma) and the first migration (`prisma/migrations/*_init`). The migration was verified on PostgreSQL 18.3 (PGlite, in-process), not yet on the Docker database. Ledger triggers follow in Stage 5, item 4.
+**Status: Implemented as schema + migration (2026-10-01).** All 26 tables are in [prisma/schema.prisma](../prisma/schema.prisma) and the first migration (`prisma/migrations/*_init`). The ledger integrity triggers are in a second migration (`*_ledger_integrity_triggers`). Both were verified on PostgreSQL 18.3 (PGlite, in-process), not yet on the Docker database.
 
 ---
 
@@ -518,9 +518,25 @@ The application checks all of these first, so it can return clear errors. The da
 Where each rule lives:
 - **Partial indexes** are declared in `schema.prisma` with Prisma's `partialIndexes` preview feature, so later migrations keep them.
 - **CHECK constraints** (41) can't be expressed in Prisma's schema language. They are hand-written SQL at the end of the init migration.
-- **Rules 1, 3 and 4** need triggers: hand-written SQL in a separate migration (Stage 5, item 4).
+- **Rules 1, 3 and 4** are triggers in the `*_ledger_integrity_triggers` migration:
 
-**Verification (2026-10-01).** The init migration was applied to PostgreSQL 18.3 running in-process (PGlite), since Docker wasn't available yet. The catalogue held exactly 26 tables, 41 checks, 34 foreign keys and 7 partial indexes. 30 checks then confirmed that valid data is accepted, and that each bad insert is rejected by the specific constraint meant to stop it: overdraft, currency mismatch on the composite keys, duplicate webhook, reused idempotency key, double reversal, two active fee rules, and so on. Those checks become permanent integration tests in Stage 6.
+  | Trigger | Fires | Effect |
+  |---|---|---|
+  | `ledger_entries_balanced` | `AFTER INSERT`, constraint trigger, `DEFERRABLE INITIALLY DEFERRED` | At COMMIT, recomputes Σ debits and Σ credits for each touched transaction. A mismatch raises `23514 check_violation` with constraint `ledger_entries_balanced`, and the whole commit rolls back |
+  | `ledger_entries_append_only`, `audit_logs_append_only` | `BEFORE UPDATE OR DELETE`, per row | Raise `23001 restrict_violation` |
+  | `ledger_entries_no_truncate`, `audit_logs_no_truncate` | `BEFORE TRUNCATE`, per statement | Same; `TRUNCATE` skips row triggers, so it needs its own |
+
+  Why deferred: entries are inserted one at a time, so mid-transaction the books are legitimately unbalanced. Checking at COMMIT allows that but never allows *committing* them. Application code must therefore never run `SET CONSTRAINTS ALL IMMEDIATE`. A balance failure surfaces when the transaction **commits**, so the ledger service must handle errors from the commit itself (Stage 11).
+
+  Limits: triggers stop application bugs, not a database superuser, who can disable them. Running the app as a non-owner role without `TRUNCATE`/`ALTER` rights closes that gap (Stage 25).
+
+**Verification (2026-10-01).** The init migration was applied to PostgreSQL 18.3 running in-process (PGlite), since Docker wasn't available yet. The catalogue held exactly 26 tables, 41 checks, 34 foreign keys and 7 partial indexes. 30 checks then confirmed that valid data is accepted, and that each bad insert is rejected by the specific constraint meant to stop it: overdraft, currency mismatch on the composite keys, duplicate webhook, reused idempotency key, double reversal, two active fee rules, and so on. A second script then attacked the triggers with **real commits** (19/19 passing):
+- Balanced 2-leg, 3-leg (with fee) and reversal postings commit.
+- An intermediate unbalanced state is accepted as long as it's balanced by COMMIT.
+- Rejected: debits ≠ credits; a single-leg entry ("money from nowhere"); a later commit that unbalances an already-committed transaction; one unbalanced transaction among several in one commit. Rejected commits left no rows behind.
+- Rejected: `UPDATE`, `DELETE` and `TRUNCATE` on both append-only tables, and changing a transaction's ID (its `ON UPDATE CASCADE` would rewrite entries).
+
+A mutation test that removed `DEFERRABLE INITIALLY DEFERRED` made every valid posting fail, confirming the tests detect the most dangerous misconfiguration. All 49 checks become permanent integration tests in Stage 6.
 
 ---
 

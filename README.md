@@ -108,7 +108,8 @@ docs/              project definition, architecture, case study, API, security
 | App skeleton: config, logging, errors, middleware, server, health, shutdown | Done (108 unit tests) |
 | Docker, PostgreSQL, Redis | `docker-compose.yml` written; not yet run (Docker Desktop not installed) |
 | Database design, Prisma, schema + first migration | Done ([DATABASE.md](docs/DATABASE.md)); not yet applied to the Docker database |
-| Ledger triggers, seed data | Next (Stage 5) |
+| Ledger integrity triggers | Done (verified on PostgreSQL 18.3 via PGlite) |
+| Seed data | Next (Stage 5) |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).

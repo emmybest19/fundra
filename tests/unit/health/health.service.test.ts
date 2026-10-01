@@ -51,11 +51,21 @@ describe('HealthService.readiness', () => {
   });
 
   it('runs checks in parallel', async () => {
-    const slow = (name: string): HealthCheck => ({ name, check: () => delay(150) });
-    const started = Date.now();
+    // Count overlapping checks instead of timing them, so a busy machine can't fail the test.
+    let running = 0;
+    let maxRunning = 0;
+    const tracked = (name: string): HealthCheck => ({
+      name,
+      check: async () => {
+        running++;
+        maxRunning = Math.max(maxRunning, running);
+        await delay(20);
+        running--;
+      },
+    });
 
-    await new HealthService([slow('a'), slow('b'), slow('c')]).readiness();
+    await new HealthService([tracked('a'), tracked('b'), tracked('c')]).readiness();
 
-    expect(Date.now() - started).toBeLessThan(400);
+    expect(maxRunning).toBe(3);
   });
 });
