@@ -68,7 +68,7 @@ A central transaction record for every money operation.
 Every transaction has a unique, human-readable reference, e.g. `FND-TRX-20261001-8F92A1`.
 
 ### 4.7 Peer-to-peer transfers
-`POST /api/v1/transfers`. The backend must:
+`POST /api/v1/transfers`. The recipient is identified by a public **handle** or a wallet **account number**, never the internal user ID. Amounts are sent as kobo strings. See decisions D1–D2 in [ARCHITECTURE.md](ARCHITECTURE.md#14-decisions). The backend must:
 1. Authenticate the user and validate the request.
 2. Check account status, KYC, wallet status, available balance, limits and idempotency.
 3. Create the transaction and ledger entries, update balances and commit atomically.
@@ -182,7 +182,7 @@ Build order from the brief:
 26 Deployment       27 Documentation
 ```
 
-**Proposed change (decision D5 in [ARCHITECTURE.md](ARCHITECTURE.md#14-open-decisions)):** Redis (17), audit logging (22), testing (23) and Docker (24) are needed by earlier steps (idempotency, OTPs, KYC audit trails, Postgres for development). They should be set up as foundations during steps 6–7, and tests should be written alongside each module.
+**Amended (decision D5 in [ARCHITECTURE.md](ARCHITECTURE.md#14-decisions)):** Redis (17), audit logging (22), testing (23) and Docker (24) are needed by earlier steps (idempotency, OTPs, KYC audit trails, Postgres for development). They are set up as foundations first, and tests are written alongside each module. The working order is [ROADMAP.md](ROADMAP.md).
 
 ---
 

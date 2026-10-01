@@ -1,14 +1,14 @@
 {
   "name": "fundra",
   "version": "1.0.0",
-  "description": "",
+  "description": "Production-style fintech backend with a double-entry ledger, built with Node.js, TypeScript, Express, PostgreSQL and Prisma",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Ebri Emmanuel",
+  "license": "MIT",
   "type": "commonjs",
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",

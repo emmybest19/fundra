@@ -12,9 +12,9 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Node 24 LTS + core dependencies installed
 - [x] Folder scaffold + docs
 
-### Stage 1 — Decisions
-- [ ] Confirm D1–D6 ([ARCHITECTURE.md §14](ARCHITECTURE.md#14-open-decisions))
-- [ ] Choose a license
+### Stage 1 — Decisions ✅
+- [x] Confirm D1–D6 ([ARCHITECTURE.md §14](ARCHITECTURE.md#14-decisions))
+- [x] Choose a license (MIT)
 
 ### Stage 2 — Dev environment
 - [ ] Install Docker Desktop

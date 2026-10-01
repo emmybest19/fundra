@@ -97,6 +97,7 @@ docs/              project definition, architecture, case study, API, security
 | Step | State |
 |---|---|
 | Requirements | Done ([PROJECT.md](docs/PROJECT.md)) |
+| Decisions D1–D6, license | Done ([ARCHITECTURE.md §14](docs/ARCHITECTURE.md#14-decisions)) |
 | Architecture | Done ([ARCHITECTURE.md](docs/ARCHITECTURE.md)) |
 | Dependencies | Installed |
 | Module scaffold | Done; files hold responsibility comments only |
@@ -142,4 +143,4 @@ Configuration lives in a local `.env` file, which git ignores. Required variable
 
 ## License
 
-Not yet chosen. `package.json` currently has npm's default `ISC`.
+[MIT](LICENSE) © 2026 Ebri Emmanuel

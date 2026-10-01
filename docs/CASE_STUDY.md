@@ -136,7 +136,7 @@ Immediate (project initialization and configuration):
 2. Add `tsconfig.json` (strict), npm scripts (`dev`, `build`, `start`, `lint`, `test`) and fix the `package.json` `main`/`type` fields.
 3. Configure Prisma 7 (`prisma.config.ts`, datasource, generator).
 4. Install ESLint, Prettier, Vitest, Supertest and Testcontainers, so tests are written alongside each module rather than at step 23.
-5. Resolve the open decisions D1–D6 before the database design.
+5. ~~Resolve the open decisions D1–D6 before the database design.~~ Done in Stage 1 ([ARCHITECTURE.md §14](ARCHITECTURE.md#14-decisions)).
 
 Later:
 - Prove the concurrency design with a parallel-transfer test before building anything on top of the ledger.
