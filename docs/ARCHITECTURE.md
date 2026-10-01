@@ -1,294 +1,355 @@
-# Fundra Architecture
+# Fundra — Architecture
 
-## 1. Overview
+> How Fundra is structured and why: system context, repository layout, layering rules, request and auth lifecycles, the double-entry ledger, the data model and known debt. Written for engineers working on or reviewing the codebase. Requirements live in [PROJECT.md](PROJECT.md); the narrative is in [CASE_STUDY.md](CASE_STUDY.md).
 
-Fundra is a fintech backend for a fictional digital financial platform. Users register, complete KYC, get an NGN wallet, fund it, send money to other users, make payments and withdraw funds.
+**Status as of 2026-10-01:** the design is complete; implementation has not started. Each section is labelled as follows:
 
-One principle shapes the whole design: **the double-entry ledger is the financial source of truth.** Every other module either controls access to money movement (auth, KYC, limits), triggers it (transfers, payments, webhooks), records it (ledger, transactions) or reports on it (notifications, audit, admin).
-
-### Goals
-
-| Goal | What it means in practice |
+| Label | Meaning |
 |---|---|
-| Correctness | Ledger always balances; no lost or duplicated money under retries, crashes or concurrency |
-| Auditability | Every balance can be explained by immutable ledger entries; sensitive actions are audit-logged |
-| Security | Defence in depth: authentication, RBAC, validation, rate limiting, signed webhooks, secret-free logs |
-| Maintainability | One developer can understand, run and change the system |
-| Evolvability | Additional currencies, payment providers and KYC providers can be added without rewrites |
-
-### Non-goals (for now)
-
-- Microservices, event sourcing, CQRS
-- Foreign exchange / multi-currency transactions
-- Real money or real identity verification (mock / sandbox providers only)
+| **Built** | Exists in the repository and works |
+| **Scaffolded** | Files exist but contain only a responsibility comment |
+| **Designed** | Decided here; no code yet |
 
 ---
 
-## 2. Architectural style: modular monolith
+## 1. System context — *Designed*
 
-Fundra is a single deployable Node.js codebase split into feature modules with explicit boundaries. It runs as **two processes from the same build**:
+```mermaid
+flowchart LR
+    client["API clients<br/>(web / mobile / Postman)"]
+    admin["Admin users"]
+    psp["Payment provider<br/>(Mock → Paystack/Flutterwave sandbox)"]
+    kycp["KYC provider<br/>(Mock)"]
+    notif["Email / SMS / Push<br/>(mock senders)"]
 
-```text
-                ┌───────────────────────────────┐
-  Clients ─────▶│  API process  (src/server.ts) │──┐
-  Providers ───▶│  Express, /api/v1             │  │
-  (webhooks)    └───────────────────────────────┘  │
-                                                    ├──▶ PostgreSQL  (source of truth)
-                ┌───────────────────────────────┐  │
-                │ Worker process (jobs/workers) │──┤
-                │ BullMQ consumers              │  │
-                └───────────────────────────────┘  └──▶ Redis  (cache, rate limits,
-                                                               OTP, locks, queues)
+    subgraph fundra["Fundra (single codebase)"]
+        api["API process<br/>Express /api/v1"]
+        worker["Worker process<br/>BullMQ consumers"]
+    end
+
+    pg[("PostgreSQL<br/>source of truth")]
+    redis[("Redis<br/>cache · rate limits · OTP · queues")]
+
+    client -->|HTTPS + JWT| api
+    admin -->|HTTPS + JWT + RBAC| api
+    psp -->|signed webhooks| api
+    api -->|initialize / payout| psp
+    api -->|verify identity| kycp
+    api --> pg
+    api --> redis
+    worker --> pg
+    worker --> redis
+    worker --> notif
 ```
 
-- **API process** handles HTTP. It never does slow work (email, SMS, provider polling) inline.
-- **Worker process** consumes BullMQ jobs: notifications, webhook processing, the outbox relay, reconciliation and statements.
+Fundra is a **modular monolith** that runs as **two processes from one build**:
 
-Both processes share the modules' services, so business rules live in one place.
+- **API process** (`src/server.ts`) handles HTTP and never does slow work inline.
+- **Worker process** (`src/jobs/workers.ts`) consumes BullMQ jobs: notifications, webhook processing, the outbox relay, reconciliation and statements.
 
-Why a monolith: one database transaction can span wallet, ledger, transaction and audit writes. That gives atomicity without distributed transactions, which matters more in a financial system than independent scaling.
+Both processes import the same module services, so every business rule exists in exactly one place.
+
+**Why a monolith:** one PostgreSQL transaction can cover the wallet, ledger, transaction, audit and outbox writes. That gives atomicity without distributed transactions, which matters more in a financial system than scaling each part independently. Module boundaries keep a later split possible.
 
 ---
 
-## 3. Layers and dependency rules
+## 2. Repository topology — *Scaffolded*
 
 ```text
-routes ──▶ middleware ──▶ controller ──▶ service ──▶ repository / Prisma ──▶ PostgreSQL
-                                           │
-                                           └──▶ other modules' services
+fundra/
+├── src/
+│   ├── config/        env.ts · database.ts · redis.ts · logger.ts
+│   ├── common/        constants/ · errors/ · types/ · utils/ · validators/
+│   ├── middleware/    auth · error · rate-limit · request-id · validation
+│   ├── modules/       13 feature modules (see §4)
+│   ├── jobs/          queues.ts · workers.ts · jobs/
+│   ├── routes/        index.ts  (mounts module routers at /api/v1)
+│   ├── app.ts         Express app assembly
+│   └── server.ts      process entry, graceful shutdown
+├── prisma/            schema.prisma · migrations/ · seed.ts
+├── tests/             unit/ · integration/ · e2e/
+└── docs/              PROJECT · ARCHITECTURE · CASE_STUDY · api · security
+```
+
+There are 69 TypeScript files under `src/` and `prisma/`. Each contains a single comment stating its responsibility; none contains code yet.
+
+Planned additions, created when the relevant module is built:
+
+| Path | Purpose |
+|---|---|
+| `src/modules/kyc/providers/` | `KycProvider` interface + `MockKycProvider` |
+| `src/modules/payments/providers/` | `PaymentProvider` interface + `MockPaymentProvider` |
+| `src/modules/payments/payment.schema.ts` | Zod schemas (missing from the initial layout) |
+| `src/common/idempotency/` | Idempotency service + middleware |
+| `src/common/outbox/` | Transactional outbox writer |
+| `src/modules/health/` | Liveness / readiness endpoints |
+| `prisma.config.ts` | Required by Prisma 7 for datasource configuration |
+
+---
+
+## 3. Layers and dependency rules — *Designed*
+
+```text
+routes → middleware → controller → service → (repository) → Prisma → PostgreSQL
+                                      └──→ other modules' services
 ```
 
 | Layer | Responsibility | Must not |
 |---|---|---|
-| `*.routes.ts` | Map HTTP method + path to middleware chain and controller | Contain logic |
+| `*.routes.ts` | Map method + path to a middleware chain and controller | Contain logic |
 | `*.schema.ts` | Zod schemas for body, query, params and responses | Touch the database |
-| `*.controller.ts` | Read the validated request, call one service method, shape the response and status code | Contain business rules or start DB transactions |
-| `*.service.ts` | Business rules, orchestration, transaction boundaries | Know about `req`/`res` |
-| `*.repository.ts` | Non-trivial persistence (raw SQL, locking). Only where needed, e.g. the ledger | Contain business rules |
-| `*.types.ts` | Module types and DTOs | |
+| `*.controller.ts` | Read the validated input, call one service method, shape the response | Contain business rules or open DB transactions |
+| `*.service.ts` | Business rules, orchestration, transaction boundaries | Know about `req` / `res` |
+| `*.repository.ts` | Complex persistence only (raw SQL, row locks) | Contain business rules |
 
-### Rules
+**Rules**
 
-1. **Modules talk through services, not tables.** `transfers` calls `ledger.service` and `wallet.service`; it never writes `ledger_entries` directly.
-2. **Only `ledger.service` writes ledger entries and updates wallet balances.** This is the single enforcement point for "debits = credits".
-3. **Transaction boundaries belong to the orchestrating service** (e.g. `transfer.service`). It opens the Prisma interactive transaction and passes the transaction client (`tx`) to the services it calls.
-4. **No circular module dependencies.** Lower-level modules (ledger, audit, wallets) never import higher-level ones (transfers, payments, admin).
-5. **`config/` is the only reader of `process.env`.** Everything else imports typed config.
-6. **Most services use Prisma directly.** A repository is added only where the queries justify it (the ledger needs `SELECT … FOR UPDATE` via raw SQL), to avoid needless abstraction.
+1. **Modules talk through services, never through each other's tables.** For example, `transfers` calls `ledger.service`; it never inserts ledger entries itself.
+2. **`ledger.service` is the only code that writes ledger entries or changes wallet balances.** It is the single enforcement point for "debits = credits".
+3. **The orchestrating service owns the transaction boundary.** It opens a Prisma interactive transaction and passes the transaction client (`tx`) down.
+4. **Dependencies point downward and are never circular.** Ledger, audit and wallets never import transfers, payments or admin.
+5. **Only `config/env.ts` reads `process.env`.** Everything else imports typed config.
+6. **Repositories only where they earn their place.** Most services use Prisma directly. The ledger has a repository because it needs `SELECT … FOR UPDATE`, which Prisma's query API does not provide.
 
-### Module dependency direction
-
-```text
-admin ─────────────────────────────────────────────┐
-webhooks ──▶ payments ──┐                          │
-transfers ──────────────┼──▶ transactions ──▶ ledger ──▶ wallets
-                        │                          │
-kyc ──▶ users ◀── auth  │                          ▼
-beneficiaries ──▶ users │                  audit, notifications (leaf modules)
+```mermaid
+flowchart TD
+    admin --> users & kyc & wallets & transactions & audit
+    webhooks --> payments
+    payments --> transactions
+    transfers --> transactions
+    transfers --> users
+    transactions --> ledger
+    ledger --> wallets
+    kyc --> users
+    kyc --> wallets
+    auth --> users
+    beneficiaries --> users
+    transfers & payments & kyc & auth --> audit & notifications
 ```
 
 ---
 
-## 4. Module catalogue
+## 4. Modules — *Scaffolded*
 
-| Module | Responsibility | Main entities owned |
+| Module | Responsibility | Owns |
 |---|---|---|
-| auth | Register, login, logout, tokens, refresh-token rotation, email/phone verification, password reset, sessions, devices | Session, RefreshToken |
-| users | Profile, contact info, preferences, status, deactivation | User |
+| auth | Register, login, logout, tokens, rotation, verification, password reset, sessions, devices | Session, RefreshToken |
+| users | Profile, contacts, preferences, status, deactivation | User |
 | kyc | KYC profile, documents, provider abstraction, status lifecycle | KycProfile, KycDocument |
 | wallets | Wallet lifecycle (created on KYC approval), status, balance reads | Wallet |
-| ledger | Balanced postings, ledger accounts (user + system), holds, balance integrity | LedgerAccount, LedgerEntry, Hold |
-| transactions | Central transaction record, references, statuses, history queries | Transaction |
-| transfers | P2P transfer orchestration | Transfer |
-| payments | Deposits, withdrawals and payments via the `PaymentProvider` abstraction | Payment, PaymentProvider |
-| webhooks | Receive, verify, deduplicate, persist and dispatch provider events | WebhookEvent |
+| ledger | Balanced postings, ledger accounts, holds, integrity | LedgerAccount, LedgerEntry, Hold |
+| transactions | Central record, references, status machine, history | Transaction |
+| transfers | P2P orchestration | Transfer |
+| payments | Deposits, withdrawals, payments via `PaymentProvider` | Payment, PaymentProvider |
+| webhooks | Receive, verify, dedupe, persist, dispatch | WebhookEvent |
 | beneficiaries | Saved recipients | Beneficiary |
-| notifications | Notification records and async delivery (email/SMS/push) | Notification |
+| notifications | Records + async delivery | Notification |
 | audit | Append-only audit trail | AuditLog |
-| admin | Admin use cases over other modules, RBAC-protected | Role, Permission (shared with auth) |
+| admin | RBAC-protected admin use cases over other modules | Role, Permission (shared with auth) |
 
 ---
 
-## 5. Request lifecycle
+## 5. Request lifecycle — *Designed*
 
 Middleware order in `app.ts`:
 
-```text
-1.  request-id           assign/propagate X-Request-Id, child logger
-2.  pino-http            structured access log (redacted)
-3.  helmet               security headers
-4.  cors                 explicit origin allow-list
-5.  webhooks router      mounted BEFORE json parsing: needs the raw body for signatures
-6.  express.json         with a size limit
-7.  rate-limit           Redis-backed, per IP and per user, stricter on auth routes
-8.  /api/v1 router       per route: auth → authorize(permission) → validate(schema) → controller
-9.  404 handler
-10. error middleware     maps errors to the standard error response
-```
+| # | Stage | Why here |
+|---|---|---|
+| 1 | `request-id` | Every later log line and error carries the ID |
+| 2 | `pino-http` | Access log, with redaction |
+| 3 | `helmet` | Security headers on every response, errors included |
+| 4 | `cors` | Explicit origin allow-list |
+| 5 | **webhooks router** | Mounted **before** JSON parsing: signature checks need the raw bytes |
+| 6 | `express.json({ limit })` | Bounded body size |
+| 7 | `rate-limit` | Redis-backed, per IP and per user; stricter on auth and money routes |
+| 8 | `/api/v1` router | Per route: `authenticate → authorize(permission) → validate(schema) → controller` |
+| 9 | 404 handler | |
+| 10 | `error` middleware | Maps errors to the error envelope; never leaks internals |
 
 ---
 
-## 6. Financial core
+## 6. Authentication lifecycle — *Designed*
 
-### 6.1 Money representation
+Access tokens are short-lived JWTs (about 15 minutes) carrying only the user ID, session ID and roles. Refresh tokens are **opaque random values stored hashed**, grouped into one **family per session**, and **rotated on every use**.
 
-- Stored as **integer minor units (kobo)** in PostgreSQL `BIGINT` and handled as `bigint` in TypeScript. Never JavaScript `number` floats.
-- Every amount carries a **currency** (ISO 4217, `NGN` initially).
-- JSON cannot carry `bigint`, so the API returns amounts as **strings of minor units** (e.g. `"1000000"` = ₦10,000.00). See [open decision D1](#15-open-decisions).
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant A as Auth service
+    participant DB as PostgreSQL
 
-### 6.2 Ledger model
-
-```text
-LedgerAccount   one per wallet (user funds) + system accounts
-  ├─ id, code, type (ASSET | LIABILITY | REVENUE | EXPENSE), currency
-  └─ normal balance side derived from type
-
-LedgerEntry     immutable, append-only
-  ├─ transactionId, ledgerAccountId
-  ├─ direction (DEBIT | CREDIT), amount (> 0), currency
-  └─ createdAt
+    C->>A: POST /auth/refresh (refresh token R1)
+    A->>DB: find token by hash(R1)
+    alt R1 is active
+        A->>DB: mark R1 used, insert R2 (same family)
+        A-->>C: new access token + R2
+    else R1 was already used (replay / theft)
+        A->>DB: revoke entire family + session
+        A->>DB: audit log: TOKEN_REUSE_DETECTED
+        A-->>C: 401
+    end
 ```
 
-From the platform's point of view, a user's wallet balance is money Fundra **owes** the user, so wallet ledger accounts are **liabilities** (credit-normal). System accounts provide the other side of postings that involve the outside world:
+Why reuse detection: if an attacker and the real user both hold R1, whoever refreshes second reveals the theft. Revoking the whole family logs both out, which limits the damage. Rotation without reuse detection adds very little security.
 
-| System account | Type | Used for |
+Other auth details:
+- Passwords are hashed with Argon2id.
+- OTPs are hashed in Redis with a TTL and a maximum number of attempts.
+- Each login creates a Session row with device, IP and user agent, which the user can list and revoke.
+
+---
+
+## 7. Financial core — *Designed*
+
+### 7.1 Money representation
+
+Amounts are stored as **integer minor units (kobo)** in PostgreSQL `BIGINT` and handled as TypeScript `bigint`. Every amount carries an ISO 4217 currency code. JSON cannot represent `bigint`, so the API sends amounts as **strings of minor units** (`"1000000"` = ₦10,000.00, pending decision D1).
+
+**Why not `number`:** `0.1 + 0.2 !== 0.3`, and values above 2^53 lose precision without warning. **Why not `DECIMAL`:** integer kobo makes it impossible to represent fractions of the smallest unit, and integer addition is exact.
+
+### 7.2 Ledger model
+
+From the platform's point of view, a user's balance is money Fundra **owes** that user. Wallet ledger accounts are therefore **liabilities** (credit-normal). System accounts provide the other side of postings that involve the outside world.
+
+| Account | Type | Used for |
 |---|---|---|
-| `PROVIDER_SETTLEMENT:<provider>` | Asset | Money held at / owed by a payment provider (deposits in, withdrawals out) |
+| `WALLET:<walletId>` | Liability | A user's funds |
+| `PROVIDER_SETTLEMENT:<provider>` | Asset | Money held at / owed by a payment provider |
 | `FEE_REVENUE` | Revenue | Fees charged |
-| `SUSPENSE` | Liability | Money that cannot yet be attributed (investigated by admins) |
+| `SUSPENSE` | Liability | Money that can't yet be attributed; investigated by admins |
 
-### 6.3 Ledger invariants (enforced in code and in the database)
+### 7.3 Invariants
 
-1. Each ledger transaction's entries sum to zero: Σ debits = Σ credits.
-2. All entries in one transaction share one currency.
-3. Entries are never updated or deleted. Corrections are new, opposite postings (`REVERSAL`, `REFUND`) linked to the original transaction.
-4. Amounts are strictly positive. Direction carries the sign.
+| # | Invariant | Enforced by |
+|---|---|---|
+| 1 | Each transaction's entries sum to zero (Σ debits = Σ credits) | `ledger.service` + deferred constraint trigger at commit |
+| 2 | All entries in one transaction share one currency | `ledger.service` + check |
+| 3 | Entries are never updated or deleted | DB trigger blocking `UPDATE`/`DELETE`; corrections are new `REVERSAL`/`REFUND` postings |
+| 4 | Entry amounts are strictly positive; direction carries the sign | `CHECK (amount > 0)` |
 
-The database enforces rule 3 with a trigger that blocks `UPDATE`/`DELETE` on `ledger_entries`, and rule 1 with a deferred constraint trigger at commit. The application enforces them too, so failures produce clear errors.
+Each rule is enforced in both the application and the database. The application gives clear errors; the database guarantees the rule even if application code has a bug.
 
-### 6.4 Example postings
+### 7.4 Example postings
 
 | Operation | Debit | Credit |
 |---|---|---|
-| Deposit ₦10,000 | Provider settlement (asset ↑) 10,000 | User wallet (liability ↑) 10,000 |
+| Deposit ₦10,000 | Provider settlement 10,000 | Wallet 10,000 |
 | Transfer A → B ₦10,000 | Wallet A 10,000 | Wallet B 10,000 |
-| Transfer with ₦50 fee | Wallet A 10,050 | Wallet B 10,000; Fee revenue 50 |
-| Withdrawal ₦5,000 (settled) | User wallet 5,000 | Provider settlement 5,000 |
+| Transfer with ₦50 fee | Wallet A 10,050 | Wallet B 10,000 · Fee revenue 50 |
+| Withdrawal ₦5,000 (settled) | Wallet 5,000 | Provider settlement 5,000 |
 | Reversal of a transfer | Wallet B 10,000 | Wallet A 10,000 |
 
-### 6.5 Balances and holds
+### 7.5 Balances and holds
 
-- **Ledger balance** = sum of posted entries for the wallet's ledger account.
+- **Ledger balance** = sum of the wallet's posted entries.
 - **Available balance** = ledger balance − active holds.
-- A **Hold** reserves funds for in-flight operations (e.g. a withdrawal awaiting the provider). It is released on failure or settled (converted into postings) on success.
-- `Wallet.ledgerBalance` and `Wallet.availableBalance` are **cached projections**. They are updated in the same DB transaction as the entries, for fast reads and balance checks. The `reconcile-transactions` job recomputes them from the ledger and alerts on any drift.
+- A **Hold** reserves funds for an in-flight operation, such as a withdrawal waiting for the provider. It is either settled into postings or released.
+- The `Wallet` balance columns are **cached projections**, updated in the same transaction as the entries. The `reconcile-transactions` job recomputes them from the ledger and alerts on any drift.
 
-### 6.6 Concurrency
+### 7.6 Concurrency
 
-Two simultaneous debits from the same wallet must not both pass the balance check.
+A database transaction alone does not stop two simultaneous debits from both passing the balance check. Each posting therefore:
 
-- Every money-moving operation runs in a Prisma **interactive transaction**.
-- The wallets involved are locked with `SELECT … FOR UPDATE` (raw SQL in `ledger.repository.ts`), **in ascending wallet-ID order** so two opposing transfers cannot deadlock.
-- The available balance is checked **after** acquiring the lock.
-- Transactions use a short timeout. A lock conflict or serialization failure is retried a bounded number of times, which is safe because of idempotency.
+1. Runs inside a Prisma interactive transaction with a short timeout.
+2. Locks the wallets involved with `SELECT … FOR UPDATE`, **in ascending wallet-ID order**, so opposing transfers (A→B and B→A) cannot deadlock.
+3. Checks the available balance **after** the lock is acquired.
+4. On a lock or serialization failure, retries a bounded number of times. This is safe because the request is idempotent.
 
-### 6.7 The posting API
-
-The rest of the system moves money through a single function:
+### 7.7 Posting API
 
 ```text
-ledger.post(tx, {
-  transactionId,
-  entries: [{ account, direction, amount }, ...],
-})
-  → validate invariants → lock accounts → check funds → insert entries → update cached balances
+ledger.post(tx, { transactionId, entries: [{ account, direction, amount }] })
+  → validate invariants → lock wallets → check available funds
+  → insert entries → update cached balances
 ```
 
-### 6.8 Transaction records
+### 7.8 Transaction state machine
 
-`Transaction` is the business-level record (type, status, reference, amount, initiator, idempotency key). Ledger entries reference it. Type-specific details live in `Transfer` and `Payment` (one-to-one with `Transaction`).
-
-```text
-Types:    DEPOSIT, WITHDRAWAL, TRANSFER, PAYMENT, REFUND, FEE, REVERSAL
-Statuses: PENDING → PROCESSING → COMPLETED
-                             ↘ FAILED
-          PENDING → CANCELLED
-          COMPLETED → REVERSED   (via a linked REVERSAL transaction)
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING
+    PENDING --> PROCESSING
+    PENDING --> CANCELLED
+    PROCESSING --> COMPLETED
+    PROCESSING --> FAILED
+    COMPLETED --> REVERSED: linked REVERSAL transaction
 ```
 
-Status changes are enforced by an explicit transition table in `transaction.service`.
-
-References look like `FND-TRX-YYYYMMDD-XXXXXX`. They have a unique index and are regenerated on the rare collision.
+Transitions are enforced by a transition table in `transaction.service`. References (`FND-TRX-YYYYMMDD-XXXXXX`) have a unique index and are regenerated on the rare collision.
 
 ---
 
-## 7. Key flows
+## 8. Key flows — *Designed*
 
-### 7.1 P2P transfer (synchronous, single DB transaction)
+### 8.1 P2P transfer
 
-```text
-POST /api/v1/transfers  (Idempotency-Key header required)
- 1. auth + validate body
- 2. idempotency: same key + same request hash → return the stored response
-                 same key + different hash   → 422
- 3. checks: sender/recipient status, KYC tier, wallet status, limits
- 4. BEGIN
-      insert Transaction (PROCESSING) + Transfer + idempotency record
-      ledger.post (locks wallets, checks balance, writes entries, updates balances)
-      Transaction → COMPLETED
-      insert AuditLog
-      insert OutboxEvent(transfer.completed)
-    COMMIT
- 5. store the response against the idempotency key; return 201
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant T as transfer.service
+    participant DB as PostgreSQL
+
+    C->>T: POST /transfers + Idempotency-Key
+    T->>DB: lookup idempotency record
+    alt key seen, same request hash
+        T-->>C: stored response (no new money movement)
+    else key seen, different hash
+        T-->>C: 422 IDEMPOTENCY_KEY_REUSED
+    else new key
+        T->>T: check status, KYC tier, limits
+        T->>DB: BEGIN
+        T->>DB: insert Transaction(PROCESSING) + Transfer + idempotency record
+        T->>DB: ledger.post → lock wallets, check funds, entries, balances
+        T->>DB: Transaction → COMPLETED, AuditLog, OutboxEvent
+        T->>DB: COMMIT + save response for the key
+        T-->>C: 201
+    end
 ```
 
-### 7.2 Deposit (asynchronous, provider-driven)
+### 8.2 Deposit via webhook
 
-```text
-POST /payments/deposits → Transaction PENDING, Payment created, provider.initialize()
-                        → return checkout/reference details to the client
-provider webhook (success) → verify, dedupe → BEGIN
-                               ledger.post(Dr provider settlement, Cr wallet)
-                               Transaction COMPLETED, outbox event
-                             COMMIT
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant P as payment.service
+    participant PSP as Provider
+    participant W as Webhook endpoint
+    participant Q as Worker
+
+    C->>P: POST /payments/deposits
+    P->>PSP: initialize()
+    P-->>C: Transaction PENDING + checkout reference
+    PSP->>W: webhook (raw body + signature)
+    W->>W: verify HMAC (constant time), validate payload
+    W->>W: insert WebhookEvent (unique provider+eventId)
+    W-->>PSP: 200 immediately (duplicates: 200, no-op)
+    W->>Q: process-webhook job
+    Q->>P: BEGIN · ledger.post(Dr settlement, Cr wallet) · COMPLETED · outbox · COMMIT
 ```
 
-The webhook is the authority for the deposit outcome, not the client's redirect.
+The **webhook decides the deposit's outcome**, never the client's redirect.
 
-### 7.3 Withdrawal
+### 8.3 Withdrawal
 
-```text
-POST /payments/withdrawals → BEGIN: Transaction PENDING, create Hold (reduces available balance) COMMIT
-                           → provider.payout()
-webhook success → BEGIN: ledger.post(Dr wallet, Cr provider settlement), release hold, COMPLETED COMMIT
-webhook failure → BEGIN: release hold, FAILED COMMIT
-```
-
-### 7.4 Webhook ingestion
-
-```text
-POST /api/v1/webhooks/payments/:provider   (raw body)
- 1. verify signature (constant-time compare)  → 401 on failure
- 2. parse + validate payload (Zod)
- 3. insert WebhookEvent (unique provider + eventId); duplicate → 200, no-op
- 4. enqueue process-webhook job; return 200 immediately
-worker: load event → dispatch by type → payments service → mark event PROCESSED / FAILED (with retries)
-```
+1. Create the transaction (`PENDING`) and a **Hold**; available balance drops immediately.
+2. Call `provider.payout()`.
+3. Webhook success: post `Dr wallet / Cr settlement`, settle the hold, mark `COMPLETED`.
+4. Webhook failure: release the hold and mark `FAILED`. Nothing is posted.
 
 ---
 
-## 8. Asynchronous processing
+## 9. Asynchronous processing — *Designed*
 
-### 8.1 Transactional outbox
+### 9.1 Transactional outbox
 
-Business code never enqueues a BullMQ job directly after a commit. That pattern loses messages on a crash, or announces work that was rolled back. Instead:
+If the API enqueued jobs right after committing, a crash between the commit and the enqueue would lose the notification. Enqueueing before the commit could announce work that is then rolled back. Instead:
 
-1. The service inserts an `OutboxEvent` row **inside** the business transaction.
-2. An outbox relay job in the worker polls unpublished events, enqueues the BullMQ jobs and marks the events published.
+1. The business transaction inserts an `OutboxEvent` row.
+2. The `outbox-relay` job publishes unpublished rows to BullMQ and marks them published.
 
-Delivery is therefore at-least-once, so job handlers are idempotent (keyed by event ID).
+Delivery is therefore **at-least-once**, so every handler is idempotent and keyed by event ID.
 
-### 8.2 Queues
+### 9.2 Queues
 
 | Queue | Jobs |
 |---|---|
@@ -296,123 +357,128 @@ Delivery is therefore at-least-once, so job handlers are idempotent (keyed by ev
 | `webhooks` | `process-webhook` |
 | `maintenance` | `outbox-relay`, `expire-otp`, `reconcile-transactions`, `generate-statement` |
 
-Jobs use bounded retries with exponential backoff. Jobs that keep failing stay in BullMQ's failed set so they can be inspected.
+Jobs retry a bounded number of times with exponential backoff. Jobs that keep failing stay in BullMQ's failed set for inspection.
 
-### 8.3 What lives in Redis vs PostgreSQL
+### 9.3 PostgreSQL vs Redis
 
-| Data | Store | Why |
+| Data | Store | Reason |
 |---|---|---|
-| Users, wallets, ledger, transactions, idempotency records, webhook events, audit | PostgreSQL | Must be durable and transactional |
-| Rate-limit counters, OTPs (hashed, TTL), short-lived caches, in-progress locks, queues | Redis | Short-lived; losing them is safe |
+| Users, wallets, ledger, transactions, **idempotency records**, webhook events, audit, outbox | PostgreSQL | Must be durable and transactional together |
+| Rate-limit counters, hashed OTPs, caches, in-progress locks, queues | Redis | Short-lived; safe to lose |
 
-Idempotency records live in **PostgreSQL**, written in the same transaction as the money movement. Redis is only used as an optional "request in progress" lock in front of them.
-
----
-
-## 9. API conventions
-
-- Base path `/api/v1`, JSON only, resource-oriented plural nouns.
-- Success: `{ "data": ..., "meta": { ... } }`
-- Error:
-  ```json
-  { "error": { "code": "INSUFFICIENT_FUNDS", "message": "...", "details": [...], "requestId": "..." } }
-  ```
-- Status codes: 200, 201, 202 (accepted async), 204, 400 (malformed), 401, 403, 404, 409 (conflict / state), 422 (validation / business rule), 429, 500.
-- Pagination: cursor-based for transactions and ledger history (`?limit=&cursor=`); offset is acceptable for small admin lists.
-- Filtering and sorting via whitelisted query params, validated by Zod.
-- `Idempotency-Key` header required on money-moving `POST`s.
-- Amounts as minor-unit strings with an explicit `currency`.
-- IDs: UUIDs (v7, time-ordered), never sequential integers, to avoid enumeration.
-- Documented with OpenAPI generated from the Zod schemas.
+The brief lists idempotency keys under Redis. They are deliberately kept in **PostgreSQL**, in the same transaction as the money movement. A Redis-only key can disagree with the database after a crash, causing either a double charge or a stuck request. Redis is used only as an optional "request in progress" lock.
 
 ---
 
-## 10. Security architecture
+## 10. Data model — *Designed (provisional)*
 
-| Area | Design |
+`prisma/schema.prisma` is currently empty. The diagram below shows the intended relationships. Columns, indexes and constraints are settled in the Database/ERD step.
+
+```mermaid
+erDiagram
+    User ||--o{ Session : has
+    Session ||--o{ RefreshToken : "rotates (family)"
+    User }o--o{ Role : assigned
+    Role }o--o{ Permission : grants
+    User ||--o| KycProfile : has
+    KycProfile ||--o{ KycDocument : has
+    User ||--o{ Wallet : "owns (one per currency)"
+    Wallet ||--|| LedgerAccount : "backed by"
+    LedgerAccount ||--o{ LedgerEntry : records
+    Transaction ||--|{ LedgerEntry : "balanced set"
+    Transaction ||--o| Transfer : details
+    Transaction ||--o| Payment : details
+    Payment }o--|| PaymentProvider : via
+    Transaction ||--o{ Hold : reserves
+    Transaction ||--o| Transaction : "reversed by"
+    User ||--o{ Beneficiary : saves
+    User ||--o{ Notification : receives
+    WebhookEvent }o--o| Transaction : updates
+    User ||--o{ AuditLog : "acts in"
+```
+
+Constraints already decided:
+- Unique `(userId, currency)` on Wallet.
+- Unique `reference` on Transaction.
+- Unique `(userId, idempotencyKey)`.
+- Unique `(provider, eventId)` on WebhookEvent.
+- UUIDv7 primary keys: time-ordered for index locality, and not guessable, which prevents enumeration.
+
+---
+
+## 11. Security architecture — *Designed*
+
+| Area | Control |
 |---|---|
 | Passwords | Argon2id |
-| Access tokens | Short-lived JWT (about 15 min), with claims limited to user ID, session ID and roles |
-| Refresh tokens | Opaque random values, stored **hashed**, rotated on every use, grouped into a family per session. Reuse of a rotated token revokes the whole family |
-| Sessions / devices | Session row per login with device info, IP and user agent; users can list and revoke them |
-| Authorization | RBAC: roles → permissions; routes declare required **permissions**, not roles |
-| Resource ownership | Services verify the caller owns the wallet / transaction / beneficiary (prevents IDOR) |
-| Input | Zod validation on every endpoint; unknown fields rejected |
-| Transport / headers | Helmet, strict CORS allow-list, body size limits, `trust proxy` configured explicitly |
-| Rate limiting | Redis-backed; strict on login, OTP, password reset and money movement |
-| Webhooks | HMAC signature over the raw body, constant-time comparison, event-ID deduplication |
-| OTPs | Random numeric, hashed in Redis, TTL, maximum attempts |
-| Logging | Pino redaction paths for passwords, tokens, OTPs, authorization headers and identity numbers |
-| Sensitive data | Identity numbers (BVN/NIN) encrypted at application level; KYC documents in private storage |
-| Secrets | Environment variables validated at startup; `.env` never committed |
-| Errors | Generic messages to clients; details only in logs, correlated by request ID |
+| Tokens | Short-lived JWT access tokens (`jose`); hashed, rotating refresh tokens with family revocation |
+| Authorization | RBAC: routes require **permissions**, not role names; services verify resource ownership (prevents IDOR) |
+| Input | Zod on every endpoint; unknown fields rejected |
+| Transport | Helmet, CORS allow-list, body size limits, explicit `trust proxy` |
+| Abuse | Redis rate limits; stricter on login, OTP, password reset and money movement |
+| Webhooks | HMAC over the raw body, constant-time comparison, event-ID dedupe |
+| Data | BVN/NIN encrypted at the application level; KYC documents in private storage |
+| Logging | Pino redaction of passwords, tokens, OTPs, `authorization` headers and identity numbers |
+| Errors | Generic client messages; details only in logs, correlated by request ID |
+
+Detailed controls will be documented in [security.md](security.md) as each module is built.
 
 ---
 
-## 11. Error handling
+## 12. Cross-cutting conventions — *Designed*
 
-- `common/errors` defines `AppError` subclasses (`ValidationError`, `NotFoundError`, `ConflictError`, `InsufficientFundsError`, `ForbiddenError`, …), each with a stable `code` and HTTP status.
-- Services throw domain errors. The error middleware maps them to the error envelope.
-- Unknown errors become `500 INTERNAL_ERROR`. The stack is logged, never returned.
-- Prisma errors (unique violation, serialization failure) are translated at the service boundary.
+**API**
+- Base path `/api/v1`.
+- Success envelope `{ data, meta }`; error envelope `{ error: { code, message, details, requestId } }`.
+- Status codes: 200, 201, 202, 204, 400, 401, 403, 404, 409, 422, 429, 500.
+- Cursor pagination for histories; filters and sorts restricted to whitelisted fields.
+- `Idempotency-Key` required on money-moving `POST`s.
+- OpenAPI generated from the Zod schemas.
+- Endpoint contracts will be documented in [api.md](api.md).
 
----
+**Errors:** `AppError` subclasses with a stable `code` and HTTP status. Services throw them, and the error middleware maps them to the envelope. Prisma errors are translated at the service boundary; unknown errors become `500 INTERNAL_ERROR`.
 
-## 12. Configuration and observability
+**Configuration:** `config/env.ts` validates `process.env` with Zod at startup. The process refuses to start if config is missing or invalid.
 
-- `config/env.ts` parses `process.env` with Zod at startup. The process refuses to start on missing or invalid config.
-- Structured JSON logs (Pino) carry `requestId`, `userId` and module context.
-- Health endpoints: `/health/live` (process up) and `/health/ready` (DB + Redis reachable).
-- Graceful shutdown: stop accepting requests, drain in-flight requests, close workers, DB and Redis.
+**Observability:** JSON logs carrying `requestId`, `userId` and module; `/health/live` and `/health/ready` endpoints; graceful shutdown that drains HTTP, workers, DB and Redis.
 
----
+**Testing:**
 
-## 13. Testing strategy
-
-| Level | Tooling | Focus |
+| Level | Tools | Focus |
 |---|---|---|
-| Unit | Vitest | Ledger invariants, fee/limit calculation, state transitions, token logic |
-| Integration | Vitest + Testcontainers (real Postgres + Redis) | Services with a real DB: atomic postings, locking, idempotency, rollbacks |
-| E2E | Supertest against the app | Full HTTP flows: register → KYC → fund → transfer → history |
+| Unit | Vitest | Ledger invariants, fees, limits, state transitions, token logic |
+| Integration | Vitest + Testcontainers (real Postgres + Redis) | Atomic postings, locking, idempotency, rollbacks |
+| E2E | Supertest | register → KYC → fund → transfer → history |
 
-Concurrency tests are required: fire N parallel transfers at one wallet and assert that no overdraft happens and that the ledger sums to zero.
-
----
-
-## 14. Deployment
-
-- Multi-stage Dockerfile; one image runs either the API (`server.js`) or the worker (`workers.js`).
-- `docker-compose.yml` for local development: api, worker, postgres, redis.
-- CI (GitHub Actions): install → lint → typecheck → unit → integration → build.
-- Cloud target later (AWS): container hosting, managed PostgreSQL, managed Redis, S3 for KYC documents, centralized logs.
+A required concurrency test fires N parallel transfers at one wallet and asserts that no overdraft occurs and the ledger still balances.
 
 ---
 
-## 15. Open decisions
+## 13. Known debt and current gaps
 
-Defaults are proposed. Confirm or change them before the database design step.
+This reflects the repository as it stands, not the design.
+
+| Gap | Impact |
+|---|---|
+| No application code; all 69 `.ts` files are placeholders | Nothing runs yet |
+| No `tsconfig.json` | TypeScript is installed but not configured; `tsc` can't build the project |
+| `package.json` has `"main": "index.js"` (the file doesn't exist), `"type": "commonjs"`, and only the default failing `test` script | No `dev`, `build`, `start` or `lint` commands yet |
+| `prisma/schema.prisma` has no datasource or generator, and there's no `prisma.config.ts` | Prisma 7 can't generate a client or run migrations |
+| Docker isn't installed on the development machine; PostgreSQL and Redis aren't available | Integration work is blocked until they are set up |
+| No `.env.example` (removed by choice) | New contributors can't see which variables are required; `config/env.ts` validation will be the only source of truth |
+| ESLint, Prettier, Vitest, Supertest and Testcontainers aren't installed | No linting, formatting or tests |
+| `npm audit`: 4 high-severity advisories, all inside the `prisma` development tool (`mysql2`, `deepmerge-ts`) | Not shipped in the API runtime; npm's only fix is downgrading to Prisma 6, which was rejected |
+| TypeScript held at 6.0.3, not 7.x | typescript-eslint supports TypeScript `<6.1.0` |
+
+---
+
+## 14. Open decisions
 
 | # | Decision | Proposed default |
 |---|---|---|
-| D1 | API amount format | Minor-unit integer **string** (`"1000000"` = ₦10,000) |
-| D2 | Transfer recipient identifier | Unique user handle / wallet account number, not the internal user ID |
-| D3 | Transaction limits | Tied to KYC tier (Tier 1/2/3) with daily and per-transaction limits |
-| D4 | Admin accounts | Same `User` table with admin roles; admin endpoints require MFA later |
-| D5 | Build order | Docker Compose, Redis, audit and the test harness set up early, not at the end |
-| D6 | Fees | Fee entries posted in the same ledger transaction as the operation |
-
----
-
-## 16. Planned additions to the folder structure
-
-Added when the relevant module is built:
-
-```text
-src/modules/kyc/providers/          KycProvider interface + MockKycProvider
-src/modules/payments/providers/     PaymentProvider interface + MockPaymentProvider
-src/modules/payments/payment.schema.ts
-src/common/idempotency/             idempotency service + middleware
-src/common/outbox/                  outbox writer
-src/jobs/jobs/                      outbox-relay, reconcile-transactions, expire-otp, ...
-src/modules/health/                 liveness / readiness
-```
+| D1 | API amount format | Minor-unit integer **string** |
+| D2 | Transfer recipient identifier | Public handle / wallet account number, not the internal user ID |
+| D3 | Transaction limits | Per KYC tier (1/2/3): per-transaction and daily |
+| D4 | Admin accounts | Same `User` table with admin roles; MFA for admin later |
+| D5 | Build order | Docker Compose, Redis, audit and the test harness set up early |
+| D6 | Fees | Posted in the same ledger transaction as the operation |
