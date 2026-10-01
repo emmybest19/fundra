@@ -131,6 +131,7 @@ Configuration lives in a local `.env` file, which git ignores. Required variable
 
 | Document | Contents |
 |---|---|
+| [ROADMAP.md](docs/ROADMAP.md) | Stage-by-stage build plan and progress |
 | [PROJECT.md](docs/PROJECT.md) | What Fundra is, its requirements and scope |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design, ledger, flows, data model, security, known debt |
 | [CASE_STUDY.md](docs/CASE_STUDY.md) | Problem, decisions, challenges and trade-offs |

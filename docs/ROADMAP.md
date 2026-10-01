@@ -1,0 +1,135 @@
+# Fundra — Roadmap
+
+Build order, one stage at a time. Say **"do stage N"** to start a stage. Each stage follows the method in [PROJECT.md §9](PROJECT.md#9-delivery-approach): design → API contract → security/money considerations → code → tests → how to verify → commit message.
+
+Legend: `[x]` done · `[ ]` to do
+
+---
+
+### Stage 0 — Foundation ✅
+- [x] Requirements ([PROJECT.md](PROJECT.md))
+- [x] Architecture ([ARCHITECTURE.md](ARCHITECTURE.md))
+- [x] Node 24 LTS + core dependencies installed
+- [x] Folder scaffold + docs
+
+### Stage 1 — Decisions
+- [ ] Confirm D1–D6 ([ARCHITECTURE.md §14](ARCHITECTURE.md#14-open-decisions))
+- [ ] Choose a license
+
+### Stage 2 — Dev environment
+- [ ] Install Docker Desktop
+- [ ] `docker-compose.yml`: PostgreSQL + Redis
+- [ ] `.nvmrc` + `engines` in package.json
+
+### Stage 3 — Tooling
+- [ ] `tsconfig.json` (strict)
+- [ ] npm scripts: `dev`, `build`, `start`, `lint`, `format`, `test`, `typecheck`
+- [ ] ESLint + Prettier
+- [ ] Vitest + Supertest
+
+### Stage 4 — App skeleton
+- [ ] `config/env.ts` (Zod-validated env), `config/logger.ts` (Pino + redaction)
+- [ ] `common/errors` + response envelope
+- [ ] Request-ID, error and 404 middleware; helmet, cors, JSON limits
+- [ ] `app.ts`, `server.ts`, graceful shutdown, `/health/live` + `/health/ready`
+
+### Stage 5 — Database design
+- [ ] ERD: all entities, keys, indexes, constraints
+- [ ] Prisma 7 setup (`prisma.config.ts`, adapter-pg) + `config/database.ts`
+- [ ] Full schema + first migration
+- [ ] Ledger triggers (no update/delete, balanced transactions)
+- [ ] Seed: roles, permissions, system ledger accounts
+
+### Stage 6 — Shared infrastructure
+- [ ] `config/redis.ts` + rate-limit middleware
+- [ ] Validation middleware (Zod)
+- [ ] Audit service
+- [ ] Idempotency service
+- [ ] Outbox writer
+- [ ] Testcontainers harness for integration tests
+
+### Stage 7 — Auth
+- [ ] Register, login, logout (Argon2id)
+- [ ] Access tokens + rotating refresh tokens with reuse detection
+- [ ] Sessions + devices
+- [ ] Email/phone verification (OTP), password reset
+- [ ] `authenticate` + `authorize(permission)` middleware (RBAC)
+
+### Stage 8 — Users
+- [ ] Profile, contact info, preferences, status, deactivation
+
+### Stage 9 — KYC
+- [ ] `KycProvider` interface + `MockKycProvider`
+- [ ] KYC profile, documents, status lifecycle
+- [ ] Tier → limits mapping
+
+### Stage 10 — Wallets
+- [ ] Wallet created on KYC approval
+- [ ] Wallet status + balance endpoints
+
+### Stage 11 — Ledger
+- [ ] `ledger.post()`: invariants, ordered row locks, balance check, entries, cached balances
+- [ ] Holds (place / settle / release)
+- [ ] **Concurrency test:** parallel debits never overdraw, ledger always balances
+
+### Stage 12 — Transactions
+- [ ] Transaction record, references, status state machine
+- [ ] History endpoints (cursor pagination, filters)
+
+### Stage 13 — Transfers
+- [ ] `POST /transfers`: checks, limits, idempotency, atomic posting, fees
+- [ ] Reversals
+
+### Stage 14 — Payments
+- [ ] `PaymentProvider` interface + `MockPaymentProvider`
+- [ ] Deposits (pending → webhook completes)
+- [ ] Withdrawals (hold → payout → settle/release)
+- [ ] Payments + refunds
+
+### Stage 15 — Webhooks
+- [ ] Raw-body route, HMAC verification, event-ID dedupe, persistence
+- [ ] `process-webhook` dispatch to payments
+
+### Stage 16 — Background jobs
+- [ ] Queues + worker process (`jobs/workers.ts`)
+- [ ] Outbox relay
+- [ ] `expire-otp`
+
+### Stage 17 — Notifications
+- [ ] Notification records + email/SMS/push jobs (mock senders)
+- [ ] Wire up events: transfers, deposits, withdrawals, logins, KYC, security
+
+### Stage 18 — Beneficiaries
+- [ ] CRUD with ownership checks + audit
+
+### Stage 19 — Admin
+- [ ] Users (view/suspend), KYC review, transactions, wallets, audit logs, settings
+- [ ] Per-permission protection
+
+### Stage 20 — Reconciliation & statements
+- [ ] `reconcile-transactions`: wallet cache vs ledger, drift alerts
+- [ ] `generate-statement`
+
+### Stage 21 — API docs
+- [ ] OpenAPI generated from Zod + Swagger UI
+- [ ] Fill in [api.md](api.md)
+
+### Stage 22 — End-to-end testing
+- [ ] E2E: register → KYC → fund → transfer → withdraw → history
+- [ ] Coverage report; close the gaps
+
+### Stage 23 — Containerise the app
+- [ ] Multi-stage `Dockerfile` (API + worker)
+- [ ] Add api + worker to `docker-compose.yml`
+
+### Stage 24 — CI
+- [ ] GitHub Actions: install → lint → typecheck → unit → integration → build
+
+### Stage 25 — Deployment
+- [ ] AWS: app hosting, managed Postgres, Redis, S3 for KYC docs, logs
+- [ ] Production config + secrets
+
+### Stage 26 — Final documentation
+- [ ] Fill in [security.md](security.md)
+- [ ] PERFORMANCE.md (measured), LESSONS-LEARNT.md
+- [ ] Case study results + README setup instructions
