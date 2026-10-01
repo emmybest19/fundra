@@ -21,11 +21,11 @@ Legend: `[x]` done · `[ ]` to do
 - [x] `docker-compose.yml`: PostgreSQL 18.6 + Redis 8.8.3 (written; first `docker compose up` pending Docker)
 - [x] `.nvmrc` + `engines` in package.json (enforced via `.npmrc` `engine-strict`)
 
-### Stage 3 — Tooling
+### Stage 3 — Tooling ✅
 - [x] `tsconfig.json` (strict) + `tsconfig.build.json`; project switched to ES modules
 - [x] npm scripts: `dev`, `dev:worker`, `build`, `clean`, `start`, `start:worker`, `typecheck` (Node 24 runs `.ts` natively; no tsx/ts-node)
 - [x] ESLint 10 (strict type-checked + money/config rules) + Prettier 3 (+ `lint`, `format` scripts)
-- [ ] Vitest + Supertest (+ `test` scripts)
+- [x] Vitest 5 (unit / integration / e2e projects, v8 coverage) + Supertest (+ `test` scripts)
 
 ### Stage 4 — App skeleton
 - [ ] `config/env.ts` (Zod-validated env), `config/logger.ts` (Pino + redaction)

@@ -46,8 +46,9 @@ Versions are exactly as installed.
 | HTTP security | helmet · cors | 8.3.0 · 2.8.6 |
 | Linting | ESLint · typescript-eslint | 10.11.0 · 8.71.0 |
 | Formatting | Prettier | 3.9.9 |
+| Testing | Vitest · @vitest/coverage-v8 · Supertest | 5.0.3 · 5.0.3 · 7.3.0 |
 
-Planned but not yet installed: Vitest, Supertest, Testcontainers, OpenAPI tooling, GitHub Actions. Docker Desktop is required locally (see Getting started).
+Planned but not yet installed: Testcontainers, OpenAPI tooling, GitHub Actions. Docker Desktop is required locally (see Getting started).
 
 Why TypeScript 6 and Prisma 7 rather than the newest majors: see [CASE_STUDY.md §5.1](docs/CASE_STUDY.md#51-latest-isnt-always-stable).
 
@@ -107,7 +108,8 @@ docs/              project definition, architecture, case study, API, security
 | TypeScript config (strict, ESM) | Done |
 | npm scripts (dev, build, start, typecheck) | Done |
 | Linting + formatting (ESLint, Prettier) | Done |
-| Test runner, Prisma config | Not started |
+| Test runner (Vitest + Supertest) | Done; no tests written yet |
+| Prisma config | Not started |
 | Docker, PostgreSQL, Redis | `docker-compose.yml` written; not yet run (Docker Desktop not installed) |
 | Modules, tests, CI, deployment | Not started |
 
@@ -151,6 +153,10 @@ Both services listen on `127.0.0.1` only, so they aren't reachable from your net
 | `npm run clean` | Deletes `dist/` |
 | `npm run lint` / `lint:fix` | ESLint (strict, type-aware) / auto-fix what it can |
 | `npm run format` / `format:check` | Prettier write / check (Markdown is excluded) |
+| `npm test` / `test:watch` | Unit tests (`tests/unit`) once / in watch mode |
+| `npm run test:integration` | Integration tests (`tests/integration`), against real PostgreSQL/Redis |
+| `npm run test:e2e` | HTTP end-to-end tests (`tests/e2e`) with Supertest |
+| `npm run test:all` / `test:coverage` | All three suites / with a v8 coverage report in `coverage/` |
 
 Development runs `.ts` files directly with Node 24's built-in type stripping, so there's no `tsx` or `ts-node`. Because of that, relative imports use the **`.ts`** extension (`import { x } from './x.ts'`). The build rewrites them to `.js`.
 
@@ -160,7 +166,7 @@ Lint rules specific to Fundra:
 - `process.env` only in `src/config/env.ts`
 - `switch` statements over statuses must handle every case
 
-Commands for tests and migrations will be added as each tool is set up.
+Migration commands will be added when Prisma is configured (Stage 5).
 
 Configuration lives in a local `.env` file, which git ignores. Required variables will be validated at startup by `src/config/env.ts`.
 

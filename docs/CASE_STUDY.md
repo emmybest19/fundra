@@ -139,7 +139,7 @@ Immediate (project initialization and configuration):
 1. Install Docker and add a `docker-compose.yml` for PostgreSQL and Redis. Nothing that touches data can be tested until this exists.
 2. ~~Add `tsconfig.json` (strict), fix the `package.json` `main`/`type` fields, and add `dev`/`build`/`start` scripts.~~ Done. `lint` and `test` scripts arrive with their tools.
 3. Configure Prisma 7 (`prisma.config.ts`, datasource, generator).
-4. Install ESLint, Prettier, Vitest, Supertest and Testcontainers, so tests are written alongside each module rather than at step 23.
+4. ~~Install ESLint, Prettier, Vitest and Supertest, so tests are written alongside each module rather than at step 23.~~ Done in Stage 3. Testcontainers follows in Stage 6.
 5. ~~Resolve the open decisions D1–D6 before the database design.~~ Done in Stage 1 ([ARCHITECTURE.md §14](ARCHITECTURE.md#14-decisions)).
 
 Later:
