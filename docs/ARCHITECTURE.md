@@ -445,7 +445,7 @@ Detailed controls will be documented in [security.md](security.md) as each modul
 **Observability and lifecycle (*Built*, except where noted):**
 - **Logs:** JSON lines carrying `requestId`; `userId` is added with auth in Stage 7.
 - **`GET /health/live`:** 200 `{ "status": "ok" }` while the process runs.
-- **`GET /health/ready`:** runs the registered dependency checks in parallel, each with a 2 s timeout. Returns 200 `ready`, or 503 `unavailable` / `draining`, with per-check `up`/`down` only; failure reasons go to the logs. **No checks are registered yet:** the database check is added in Stage 5 and Redis in Stage 6, together with their connections.
+- **`GET /health/ready`:** runs the registered dependency checks in parallel, each with a 2 s timeout. Returns 200 `ready`, or 503 `unavailable` / `draining`, with per-check `up`/`down` only; failure reasons go to the logs. Registered checks: **`database`** (`SELECT 1` through the shared Prisma pool). `redis` follows in Stage 6. The process starts even when a dependency is down and reports 503 until it recovers, so orchestrators hold traffic rather than crash-looping the app. Verified against a live PostgreSQL 18.3 that was down at startup, came up, died and recovered: 503 → 200 → 503 → 200 with no restart, and one `warn` log line per failed probe.
 - Health responses are infrastructure, not API: they aren't versioned, aren't wrapped in the envelope, are sent with `Cache-Control: no-store`, and aren't access-logged.
 - **Graceful shutdown** (`src/common/utils/shutdown.ts`) on SIGTERM/SIGINT:
   1. Readiness reports `draining`.
@@ -475,7 +475,8 @@ This reflects the repository as it stands, not the design.
 | Gap | Impact |
 |---|---|
 | A running server with health endpoints and no business modules yet; the module `.ts` files are placeholders | `/api/v1` returns 404 for every path until modules are mounted |
-| `/health/ready` has no dependency checks registered | It reports `ready` even though nothing connects to PostgreSQL or Redis yet. Checks arrive with the connections in Stages 5–6 |
+| `/health/ready` checks the database but not Redis yet | It can report `ready` while Redis is down. The Redis check arrives with the Redis connection (Stage 6) |
+| Graceful shutdown → `disconnectDatabase()` hasn't been exercised end-to-end | Windows can't deliver SIGTERM to a Node process. The cleanup hook ordering is unit-tested; a real SIGTERM test runs once the app is in Docker (Stage 23) |
 | The init migration has only been run on PGlite (in-process PostgreSQL 18.3), not on the Docker database, and `prisma migrate` drift detection hasn't run (it needs a shadow database) | Low risk, same engine version, but `npm run db:migrate` against Docker is still the real test |
 | The 49 migration checks (30 constraints + 19 triggers) live in throwaway scripts | They need porting to `tests/integration` with Testcontainers (Stage 6) to keep guarding future migrations |
 | Ledger triggers can be disabled by a database superuser | They protect against application bugs, not a compromised DBA account. The app must run as a non-owner role (Stage 25) |

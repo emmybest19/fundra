@@ -23,18 +23,15 @@ export function createPrismaClient({
   });
 
   // Query logging stays off: SQL parameters can contain personal data.
+  // Prisma's `error` events are not logged either: every query error is also thrown, and is
+  // logged once where it is handled (error middleware, readiness check). Logging both doubled
+  // every failure.
   const client = new PrismaClient({
     adapter,
-    log: [
-      { emit: 'event', level: 'warn' },
-      { emit: 'event', level: 'error' },
-    ],
+    log: [{ emit: 'event', level: 'warn' }],
   });
   client.$on('warn', (event) => {
     logger.warn({ prisma: event.message, target: event.target }, 'prisma warning');
-  });
-  client.$on('error', (event) => {
-    logger.error({ prisma: event.message, target: event.target }, 'prisma error');
   });
 
   return client;

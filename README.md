@@ -110,7 +110,8 @@ docs/              project definition, architecture, case study, API, security
 | Database design, Prisma, schema + first migration | Done ([DATABASE.md](docs/DATABASE.md)); not yet applied to the Docker database |
 | Ledger integrity triggers | Done (verified on PostgreSQL 18.3 via PGlite) |
 | Seed data (roles, permissions, limits, fees, system accounts) | Done |
-| Database readiness check | Next (Stage 5) |
+| Database readiness check + connection close on shutdown | Done (Stage 5 complete) |
+| Shared infrastructure: Redis, rate limiting, validation, audit, idempotency, outbox, Testcontainers | Next (Stage 6) |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).
@@ -148,7 +149,8 @@ Run the API:
 ```bash
 npm run dev                                   # http://localhost:3000, restarts on file changes
 curl http://localhost:3000/health/live        # {"status":"ok"}
-curl http://localhost:3000/health/ready       # {"status":"ready","checks":{}}
+curl http://localhost:3000/health/ready       # {"status":"ready","checks":{"database":"up"}}
+                                              # 503 {"status":"unavailable",...} if PostgreSQL is down
 ```
 
 Press Ctrl+C to stop gracefully: in-flight requests finish before the process exits.

@@ -33,13 +33,13 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Request-ID, request logger, error and 404 middleware; helmet, CORS allow-list, 100 kB JSON limit
 - [x] `app.ts`, `server.ts`, graceful shutdown, `/health/live` + `/health/ready` (readiness checks registered in Stages 5–6)
 
-### Stage 5 — Database design
+### Stage 5 — Database design ✅
 - [x] ERD: all entities, keys, indexes, constraints ([DATABASE.md](DATABASE.md), 26 tables)
 - [x] Prisma 7 setup (`prisma.config.ts`, adapter-pg) + `config/database.ts` (real connection test pending Docker)
 - [x] Full schema + first migration (26 tables, 41 CHECKs, 7 partial indexes; verified on PostgreSQL 18.3 via PGlite, apply to Docker DB pending)
 - [x] Ledger triggers (no update/delete/truncate, balanced at commit; 19 checks on PostgreSQL 18.3 via PGlite)
 - [x] Seed: roles, permissions, system ledger accounts (+ tier limits, fee rule, MOCK provider; atomic, re-runnable; verified via pglite-socket)
-- [ ] Register the `database` readiness check + close Prisma on shutdown
+- [x] Register the `database` readiness check + close Prisma on shutdown (live down/up/down/up test passed)
 
 ### Stage 6 — Shared infrastructure
 - [ ] `config/redis.ts` + rate-limit middleware
