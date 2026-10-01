@@ -109,7 +109,8 @@ docs/              project definition, architecture, case study, API, security
 | Docker, PostgreSQL, Redis | `docker-compose.yml` written; not yet run (Docker Desktop not installed) |
 | Database design, Prisma, schema + first migration | Done ([DATABASE.md](docs/DATABASE.md)); not yet applied to the Docker database |
 | Ledger integrity triggers | Done (verified on PostgreSQL 18.3 via PGlite) |
-| Seed data | Next (Stage 5) |
+| Seed data (roles, permissions, limits, fees, system accounts) | Done |
+| Database readiness check | Next (Stage 5) |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).
@@ -185,7 +186,7 @@ Lint rules specific to Fundra:
 | `npm run db:migrate` | Creates and applies a migration in development (`prisma migrate dev`) |
 | `npm run db:deploy` | Applies pending migrations without prompts (CI, production) |
 | `npm run db:status` | Shows which migrations are applied |
-| `npm run db:seed` | Runs `prisma/seed.ts` |
+| `npm run db:seed` | Seeds roles, permissions, tier limits, fee rules, the mock payment provider and system ledger accounts. Atomic and safe to re-run; admin-edited limits and fees are preserved ([details](docs/DATABASE.md#10-seed-data)) |
 | `npm run db:studio` | Opens Prisma Studio to browse data |
 
 Prisma reads its settings from `prisma.config.ts`, which loads `.env` with Node's built-in loader. `db:generate` works without `DATABASE_URL`; the other commands need it.

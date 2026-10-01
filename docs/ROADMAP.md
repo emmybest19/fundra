@@ -38,7 +38,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Prisma 7 setup (`prisma.config.ts`, adapter-pg) + `config/database.ts` (real connection test pending Docker)
 - [x] Full schema + first migration (26 tables, 41 CHECKs, 7 partial indexes; verified on PostgreSQL 18.3 via PGlite, apply to Docker DB pending)
 - [x] Ledger triggers (no update/delete/truncate, balanced at commit; 19 checks on PostgreSQL 18.3 via PGlite)
-- [ ] Seed: roles, permissions, system ledger accounts
+- [x] Seed: roles, permissions, system ledger accounts (+ tier limits, fee rule, MOCK provider; atomic, re-runnable; verified via pglite-socket)
 - [ ] Register the `database` readiness check + close Prisma on shutdown
 
 ### Stage 6 — Shared infrastructure
@@ -72,6 +72,7 @@ Legend: `[x]` done · `[ ]` to do
 
 ### Stage 11 — Ledger
 - [ ] `ledger.post()`: invariants, ordered row locks, balance check, entries, cached balances
+- [ ] Make `ledger_accounts.code/type/currency` immutable once created (trigger; found while testing the seed)
 - [ ] Holds (place / settle / release)
 - [ ] **Concurrency test:** parallel debits never overdraw, ledger always balances
 

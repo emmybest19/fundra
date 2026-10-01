@@ -14,7 +14,7 @@ export default defineConfig({
   schema: 'prisma/schema.prisma',
   migrations: {
     path: 'prisma/migrations',
-    seed: 'node prisma/seed.ts',
+    seed: 'node --env-file-if-exists=.env prisma/seed.ts',
   },
   ...(databaseUrl ? { datasource: { url: databaseUrl } } : {}),
 });

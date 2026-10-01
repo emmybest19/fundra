@@ -555,13 +555,33 @@ A mutation test that removed `DEFERRABLE INITIALLY DEFERRED` made every valid po
 
 ---
 
-## 10. Seed data (Stage 5, item 5)
+## 10. Seed data
 
-| Data | Contents |
+`npm run db:seed` runs [prisma/seed.ts](../prisma/seed.ts) in **one database transaction**: either everything applies or nothing does. It's safe to re-run, and it treats the two kinds of data differently:
+
+| Data | Source | On re-run |
+|---|---|---|
+| 6 roles, 13 permissions, 40 role grants | [src/common/constants/rbac.ts](../src/common/constants/rbac.ts) | **Synced**: descriptions updated; grants not in code are revoked; missing ones are added |
+| Payment provider `MOCK` | `prisma/seed.ts` | Synced |
+| System ledger accounts: `PROVIDER_SETTLEMENT:MOCK:NGN` (asset), `FEE_REVENUE:NGN` (revenue), `SUSPENSE:NGN` (liability) | `prisma/seed.ts` | Created if missing. If one exists with a **different type or currency, the seed fails** and rolls back rather than altering an account that may carry entries |
+| Tier limits (D3, NGN) | `prisma/seed.ts` | **Created only if missing**: admin edits survive |
+| Fee rule `TRANSFER` / NGN: ₦0 (D6) | `prisma/seed.ts` | Created only if no **active** rule exists |
+
+**Role → permission mapping** (separation of duties: no role except SUPER_ADMIN can both approve KYC and reverse money):
+
+| Role | Permissions |
 |---|---|
-| Roles | The six roles |
-| Permissions | Initial `resource:action` keys, mapped to roles |
-| Tier limits | D3 table for NGN |
-| Fee rules | `TRANSFER` / NGN: ₦0 |
-| Payment providers | `MOCK` |
-| System ledger accounts | `PROVIDER_SETTLEMENT:MOCK:NGN` (asset), `FEE_REVENUE:NGN` (revenue), `SUSPENSE:NGN` (liability) |
+| SUPER_ADMIN | All 13, including `roles:assign` and `settings:update` (held only by this role) |
+| ADMIN | `users:read/suspend`, `kyc:read`, `wallets:read/freeze`, `transactions:read`, `webhooks:read`, `audit_logs:read`, `settings:read` |
+| COMPLIANCE | `users:read/suspend`, `kyc:read/review`, `wallets:read/freeze`, `transactions:read`, `audit_logs:read` |
+| FINANCE | `wallets:read`, `transactions:read/reverse`, `webhooks:read`, `audit_logs:read`, `settings:read` |
+| SUPPORT | `users:read`, `kyc:read`, `wallets:read`, `transactions:read` (read-only) |
+| USER | none (customers act on resources they own) |
+
+**Verification (2026-10-02).** The real seed (real Prisma client and `pg` driver over TCP) ran against PostgreSQL 18.3 with both migrations applied, served by pglite-socket because Docker wasn't available:
+- Run 1 created everything; run 2 created no tier limits or fee rules.
+- An admin's edit to tier 1 survived a re-seed.
+- A hand-granted `kyc:review` on SUPPORT was revoked by a re-seed.
+- A conflicting `FEE_REVENUE:NGN` (altered to EXPENSE) made the seed exit 1 with a clear message, and the rogue grant made in the same setup was **still present** afterwards, proving the rollback was atomic.
+
+**Finding:** that last test showed a system ledger account's `type` can be changed with a plain `UPDATE`. On an account that already has entries, that would silently change what its balance means. `code`, `type` and `currency` should become immutable once set (follow-up in Stage 11).
