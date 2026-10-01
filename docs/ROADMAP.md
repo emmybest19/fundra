@@ -18,7 +18,7 @@ Legend: `[x]` done · `[ ]` to do
 
 ### Stage 2 — Dev environment
 - [ ] Install Docker Desktop
-- [ ] `docker-compose.yml`: PostgreSQL + Redis
+- [x] `docker-compose.yml`: PostgreSQL 18.6 + Redis 8.8.3 (written; first `docker compose up` pending Docker)
 - [ ] `.nvmrc` + `engines` in package.json
 
 ### Stage 3 — Tooling

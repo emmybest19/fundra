@@ -36,12 +36,12 @@ Versions are exactly as installed.
 | Runtime | Node.js (LTS) | 24.21.0 |
 | Language | TypeScript (strict) | 6.0.3 |
 | HTTP | Express | 5.2.1 |
-| Database | PostgreSQL | *not yet provisioned* |
+| Database | PostgreSQL (Docker image `postgres:18.6-alpine`) | 18.6 |
 | ORM | Prisma + `@prisma/adapter-pg` | 7.10.0 |
 | Validation | Zod | 4.6.5 |
 | JWT | jose | 6.2.12 |
 | Password hashing | argon2 (Argon2id) | 0.45.1 |
-| Cache / queues | Redis via ioredis · BullMQ | 6.0.0 · 6.3.11 |
+| Cache / queues | Redis (Docker image `redis:8.8.3-alpine`) · ioredis · BullMQ | 8.8.3 · 6.0.0 · 6.3.11 |
 | Logging | Pino · pino-http · pino-pretty (dev) | 10.3.1 · 11.0.0 · 13.1.3 |
 | HTTP security | helmet · cors | 8.3.0 · 2.8.6 |
 
@@ -103,7 +103,7 @@ docs/              project definition, architecture, case study, API, security
 | Module scaffold | Done; files hold responsibility comments only |
 | Database/ERD, ledger design, API spec | Next |
 | TypeScript config, scripts, Prisma config | Not started |
-| Docker, PostgreSQL, Redis | Not started (Docker not installed yet) |
+| Docker, PostgreSQL, Redis | `docker-compose.yml` written; not yet run (Docker Desktop not installed) |
 | Modules, tests, CI, deployment | Not started |
 
 Known gaps are listed in [ARCHITECTURE.md §13](docs/ARCHITECTURE.md#13-known-debt-and-current-gaps).
@@ -122,7 +122,18 @@ npm install
 
 `npm install` runs the install scripts approved in `package.json` (`allowScripts`) for argon2 and Prisma.
 
-There is nothing to run yet. Commands for starting PostgreSQL and Redis, running migrations, and starting the API, workers and tests will be added here as each piece is built.
+Start PostgreSQL and Redis (requires Docker Desktop):
+
+```bash
+docker compose up -d     # start in the background
+docker compose ps        # both services should show "healthy"
+docker compose down      # stop (data is kept)
+docker compose down -v   # stop and delete all local data
+```
+
+Both services listen on `127.0.0.1` only, so they aren't reachable from your network. `docker-compose.yml` reads these variables from `.env`: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, and optionally `POSTGRES_PORT` and `REDIS_PORT`.
+
+Commands for migrations and for starting the API, workers and tests will be added here as each piece is built.
 
 Configuration lives in a local `.env` file, which git ignores. Required variables will be validated at startup by `src/config/env.ts`.
 
