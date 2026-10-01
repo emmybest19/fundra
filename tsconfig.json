@@ -22,6 +22,8 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "erasableSyntaxOnly": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
     "noUncheckedSideEffectImports": true,
     "forceConsistentCasingInFileNames": true,
 

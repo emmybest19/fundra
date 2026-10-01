@@ -103,7 +103,8 @@ docs/              project definition, architecture, case study, API, security
 | Module scaffold | Done; files hold responsibility comments only |
 | Database/ERD, ledger design, API spec | Next |
 | TypeScript config (strict, ESM) | Done |
-| npm scripts, linting, test runner, Prisma config | Not started |
+| npm scripts (dev, build, start, typecheck) | Done |
+| Linting, formatting, test runner, Prisma config | Not started |
 | Docker, PostgreSQL, Redis | `docker-compose.yml` written; not yet run (Docker Desktop not installed) |
 | Modules, tests, CI, deployment | Not started |
 
@@ -135,7 +136,20 @@ docker compose down -v   # stop and delete all local data
 
 Both services listen on `127.0.0.1` only, so they aren't reachable from your network. `docker-compose.yml` reads these variables from `.env`: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, and optionally `POSTGRES_PORT` and `REDIS_PORT`.
 
-Commands for migrations and for starting the API, workers and tests will be added here as each piece is built.
+### Scripts
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Runs the API from TypeScript source with auto-restart on changes; loads `.env` |
+| `npm run dev:worker` | Same for the background worker process |
+| `npm run typecheck` | Type-checks `src`, `tests` and `prisma` (no output files) |
+| `npm run build` | Cleans `dist/` and compiles `src/` to JavaScript |
+| `npm start` / `npm run start:worker` | Runs the compiled API / worker from `dist/` |
+| `npm run clean` | Deletes `dist/` |
+
+Development runs `.ts` files directly with Node 24's built-in type stripping, so there's no `tsx` or `ts-node`. Because of that, relative imports use the **`.ts`** extension (`import { x } from './x.ts'`). The build rewrites them to `.js`.
+
+Commands for linting, tests and migrations will be added as each tool is set up.
 
 Configuration lives in a local `.env` file, which git ignores. Required variables will be validated at startup by `src/config/env.ts`.
 

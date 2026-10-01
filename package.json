@@ -3,7 +3,13 @@
   "version": "1.0.0",
   "description": "Production-style fintech backend with a double-entry ledger, built with Node.js, TypeScript, Express, PostgreSQL and Prisma",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "node --watch --env-file-if-exists=.env src/server.ts",
+    "dev:worker": "node --watch --env-file-if-exists=.env src/jobs/workers.ts",
+    "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
+    "start": "node --env-file-if-exists=.env dist/server.js",
+    "start:worker": "node --env-file-if-exists=.env dist/jobs/workers.js",
+    "typecheck": "tsc -p tsconfig.json"
   },
   "keywords": [],
   "author": "Ebri Emmanuel",

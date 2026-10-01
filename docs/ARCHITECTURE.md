@@ -463,11 +463,10 @@ This reflects the repository as it stands, not the design.
 | Gap | Impact |
 |---|---|
 | No application code; all 69 `.ts` files are placeholders | Nothing runs yet |
-| `package.json` has only the default failing `test` script | No `dev`, `build`, `start` or `lint` commands yet; run `npx tsc -p tsconfig.json` (check) or `npx tsc -p tsconfig.build.json` (build) by hand |
 | `prisma/schema.prisma` has no datasource or generator, and there's no `prisma.config.ts` | Prisma 7 can't generate a client or run migrations |
 | Docker isn't installed on the development machine; PostgreSQL and Redis aren't available | Integration work is blocked until they are set up |
 | No `.env.example` (removed by choice) | New contributors can't see which variables are required; `config/env.ts` validation will be the only source of truth |
-| ESLint, Prettier, Vitest, Supertest and Testcontainers aren't installed | No linting, formatting or tests |
+| ESLint, Prettier, Vitest, Supertest and Testcontainers aren't installed | No linting, formatting or tests; no `lint`, `format` or `test` scripts |
 | `npm audit`: 4 high-severity advisories, all inside the `prisma` development tool (`mysql2`, `deepmerge-ts`) | Not shipped in the API runtime; npm's only fix is downgrading to Prisma 6, which was rejected |
 | TypeScript held at 6.0.3, not 7.x | typescript-eslint supports TypeScript `<6.1.0` |
 

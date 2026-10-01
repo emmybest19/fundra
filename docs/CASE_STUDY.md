@@ -102,7 +102,11 @@ npm 11 skips package install scripts unless they're explicitly approved. Without
 
 `npm audit` reports 4 high-severity advisories, all inside the `prisma` development tool (through `mysql2` and `deepmerge-ts`). npm's only proposed fix is a major **downgrade** to Prisma 6. None of this code runs in the API, so the advisories are documented rather than "fixed" by a downgrade that would cost more than the risk.
 
-### 5.4 Design challenges solved on paper
+### 5.4 Running TypeScript without a build tool
+
+Node 24 runs `.ts` files directly by stripping type annotations. That removes the usual dev-time dependency (`tsx`, `ts-node`, `nodemon`), and `node --watch --env-file-if-exists=.env` covers auto-restart and env loading. The catch is that Node resolves imports literally: `import './x.js'` fails when only `x.ts` exists. The fix is to write imports with `.ts` extensions and let TypeScript rewrite them to `.js` at build time (`allowImportingTsExtensions` + `rewriteRelativeImportExtensions`). `erasableSyntaxOnly` makes the compiler reject syntax that can't simply be stripped, such as `enum`, so code that type-checks is guaranteed to run unmodified. This was checked with a probe module run three ways: from source, after `tsc`, and from `dist/`.
+
+### 5.5 Design challenges solved on paper
 
 These are designed in [ARCHITECTURE.md](ARCHITECTURE.md) and will be proven by tests as they are built:
 
@@ -133,7 +137,7 @@ These are designed in [ARCHITECTURE.md](ARCHITECTURE.md) and will be proven by t
 
 Immediate (project initialization and configuration):
 1. Install Docker and add a `docker-compose.yml` for PostgreSQL and Redis. Nothing that touches data can be tested until this exists.
-2. ~~Add `tsconfig.json` (strict) and fix the `package.json` `main`/`type` fields.~~ Done: strict, native ESM. Still to add: npm scripts (`dev`, `build`, `start`, `lint`, `test`).
+2. ~~Add `tsconfig.json` (strict), fix the `package.json` `main`/`type` fields, and add `dev`/`build`/`start` scripts.~~ Done. `lint` and `test` scripts arrive with their tools.
 3. Configure Prisma 7 (`prisma.config.ts`, datasource, generator).
 4. Install ESLint, Prettier, Vitest, Supertest and Testcontainers, so tests are written alongside each module rather than at step 23.
 5. ~~Resolve the open decisions D1–D6 before the database design.~~ Done in Stage 1 ([ARCHITECTURE.md §14](ARCHITECTURE.md#14-decisions)).
