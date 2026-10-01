@@ -28,7 +28,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Vitest 5 (unit / integration / e2e projects, v8 coverage) + Supertest (+ `test` scripts)
 
 ### Stage 4 — App skeleton
-- [ ] `config/env.ts` (Zod-validated env), `config/logger.ts` (Pino + redaction)
+- [x] `config/env.ts` (Zod-validated env), `config/logger.ts` (Pino + redaction), 24 unit tests
 - [ ] `common/errors` + response envelope
 - [ ] Request-ID, error and 404 middleware; helmet, cors, JSON limits
 - [ ] `app.ts`, `server.ts`, graceful shutdown, `/health/live` + `/health/ready`

@@ -2,7 +2,7 @@
 
 > The story of Fundra: the problem, the architecture chosen, the technologies, the challenges met, the trade-offs made and what comes next. Written for portfolio readers, reviewers and interviewers. Technical detail lives in [ARCHITECTURE.md](ARCHITECTURE.md); scope lives in [PROJECT.md](PROJECT.md).
 
-**Stage at time of writing (2026-10-01):** requirements and architecture are complete, dependencies are installed and the module structure is scaffolded. No application code has been written yet. This case study will be extended as each module is built. Every claim below about the repository reflects its actual state on that date.
+**Stage at time of writing (2026-10-01):** requirements and architecture are complete, dependencies and tooling are set up, and the module structure is scaffolded. Application code so far covers only validated configuration and redacted logging (see [ROADMAP.md](ROADMAP.md)). This case study will be extended as each module is built. Every claim below about the repository reflects its actual state on that date.
 
 ---
 

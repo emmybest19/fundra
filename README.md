@@ -168,7 +168,21 @@ Lint rules specific to Fundra:
 
 Migration commands will be added when Prisma is configured (Stage 5).
 
-Configuration lives in a local `.env` file, which git ignores. Required variables will be validated at startup by `src/config/env.ts`.
+### Environment variables
+
+Configuration lives in a local `.env` file, which git ignores. `src/config/env.ts` validates it at startup. If anything is missing or invalid, the process refuses to start and lists each bad variable by name. Values are never printed.
+
+| Variable | Required | Default | Notes |
+|---|---|---|---|
+| `NODE_ENV` | no | `development` | `development` · `test` · `production` |
+| `PORT` | no | `3000` | 1–65535 |
+| `LOG_LEVEL` | no | `info` (`silent` under test) | `fatal` · `error` · `warn` · `info` · `debug` · `trace` · `silent` |
+| `DATABASE_URL` | **yes** | — | `postgresql://user:pass@localhost:5432/fundra?schema=public` |
+| `REDIS_URL` | **yes** | — | `redis://:pass@localhost:6379` (`rediss://` for TLS) |
+| `POSTGRES_USER` · `POSTGRES_PASSWORD` · `POSTGRES_DB` · `REDIS_PASSWORD` | for Docker | — | Read by `docker-compose.yml`, not the app |
+| `POSTGRES_PORT` · `REDIS_PORT` | no | `5432` · `6379` | Host ports used by `docker-compose.yml` |
+
+Logs are JSON in production, colourised in development (pino-pretty), and silent in tests. Passwords, tokens, OTPs, PINs, BVN/NIN and auth/cookie headers are replaced with `[REDACTED]`.
 
 ---
 

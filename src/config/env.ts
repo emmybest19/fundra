@@ -1,1 +1,44 @@
 // Loads and validates environment variables (Zod); the only place process.env is read.
+import { z } from 'zod';
+
+export const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
+
+const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
+  LOG_LEVEL: z.enum(LOG_LEVELS).optional(),
+  DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
+  REDIS_URL: z.url({ protocol: /^rediss?$/ }),
+});
+
+export type Env = Readonly<z.infer<typeof envSchema>>;
+
+export class EnvValidationError extends Error {
+  readonly issues: readonly string[];
+
+  constructor(issues: readonly string[]) {
+    super(
+      `Invalid environment configuration:\n${issues.map((issue) => `  - ${issue}`).join('\n')}`,
+    );
+    this.name = 'EnvValidationError';
+    this.issues = issues;
+  }
+}
+
+export function parseEnv(source: Readonly<Record<string, string | undefined>>): Env {
+  // `KEY=` in a .env file means "not set", so defaults and required checks still apply.
+  const present = Object.fromEntries(
+    Object.entries(source).filter(([, value]) => value !== undefined && value.trim() !== ''),
+  );
+
+  const result = envSchema.safeParse(present);
+  if (!result.success) {
+    // Report the variable and the problem, never the value: it may be a secret.
+    throw new EnvValidationError(
+      result.error.issues.map((issue) => `${issue.path.map(String).join('.')}: ${issue.message}`),
+    );
+  }
+  return Object.freeze(result.data);
+}
+
+export const env = parseEnv(process.env);

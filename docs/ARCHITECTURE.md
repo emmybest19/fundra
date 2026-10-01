@@ -2,7 +2,7 @@
 
 > How Fundra is structured and why: system context, repository layout, layering rules, request and auth lifecycles, the double-entry ledger, the data model and known debt. Written for engineers working on or reviewing the codebase. Requirements live in [PROJECT.md](PROJECT.md); the narrative is in [CASE_STUDY.md](CASE_STUDY.md).
 
-**Status as of 2026-10-01:** the design is complete; implementation has not started. Each section is labelled as follows:
+**Status as of 2026-10-01:** the design is complete. Tooling is set up, and implementation has begun with validated configuration and logging (Stage 4); progress is tracked in [ROADMAP.md](ROADMAP.md). Each section is labelled as follows:
 
 | Label | Meaning |
 |---|---|
@@ -462,7 +462,7 @@ This reflects the repository as it stands, not the design.
 
 | Gap | Impact |
 |---|---|
-| No application code; all 69 `.ts` files are placeholders | Nothing runs yet |
+| Application code limited to `config/env.ts` and `config/logger.ts`; the remaining `.ts` files are placeholders | No HTTP server yet |
 | `prisma/schema.prisma` has no datasource or generator, and there's no `prisma.config.ts` | Prisma 7 can't generate a client or run migrations |
 | Docker isn't installed on the development machine; PostgreSQL and Redis aren't available | Integration work is blocked until they are set up |
 | No `.env.example` (removed by choice) | New contributors can't see which variables are required; `config/env.ts` validation will be the only source of truth |

@@ -3,6 +3,13 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'node',
+    // Safe, fake values so src/config/env.ts validates under test. Never real credentials.
+    // Integration tests override the URLs with their Testcontainers instances.
+    env: {
+      NODE_ENV: 'test',
+      DATABASE_URL: 'postgresql://fundra:test@localhost:5432/fundra_test',
+      REDIS_URL: 'redis://localhost:6379',
+    },
     // Each test starts from a clean slate of mocks, spies and stubbed env vars.
     restoreMocks: true,
     unstubEnvs: true,
