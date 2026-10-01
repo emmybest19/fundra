@@ -42,7 +42,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Register the `database` readiness check + close Prisma on shutdown (live down/up/down/up test passed)
 
 ### Stage 6 — Shared infrastructure
-- [ ] `config/redis.ts` + rate-limit middleware
+- [x] `config/redis.ts` + rate-limit middleware (global 300/min per IP; Lua verified on ioredis-mock, real Redis pending Docker)
 - [ ] Register the `redis` readiness check + close Redis on shutdown
 - [ ] Validation middleware (Zod)
 - [ ] Audit service
@@ -50,6 +50,7 @@ Legend: `[x]` done · `[ ]` to do
 - [ ] Outbox writer
 - [ ] Testcontainers harness for integration tests
 - [ ] Port the 49 migration checks from Stage 5 (30 constraints + 19 triggers) into integration tests
+- [ ] Integration test for the rate-limit Lua script on real Redis 8.8 (counting, expiry, TTL repair, concurrency)
 
 ### Stage 7 — Auth
 - [ ] Register, login, logout (Argon2id)
@@ -95,7 +96,7 @@ Legend: `[x]` done · `[ ]` to do
 - [ ] `process-webhook` dispatch to payments
 
 ### Stage 16 — Background jobs
-- [ ] Queues + worker process (`jobs/workers.ts`)
+- [ ] Queues + worker process (`jobs/workers.ts`); confirm BullMQ works with ioredis 6 (RESP3 default)
 - [ ] Outbox relay
 - [ ] `expire-otp`
 

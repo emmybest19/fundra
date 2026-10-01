@@ -2,6 +2,11 @@
 import express, { type Express } from 'express';
 import { env } from './config/env.ts';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware.ts';
+import {
+  API_RATE_LIMIT,
+  rateLimit,
+  type RateLimitStore,
+} from './middleware/rate-limit.middleware.ts';
 import { requestId } from './middleware/request-id.middleware.ts';
 import { requestLogger } from './middleware/request-logger.middleware.ts';
 import { corsPolicy, jsonBody, securityHeaders } from './middleware/security.middleware.ts';
@@ -11,10 +16,12 @@ import { apiRouter } from './routes/index.ts';
 
 export interface AppDependencies {
   health: HealthService;
+  /** Redis in production; an in-memory store in tests. */
+  rateLimitStore: RateLimitStore;
 }
 
 /** Middleware order is deliberate; see docs/ARCHITECTURE.md §5. */
-export function createApp({ health }: AppDependencies): Express {
+export function createApp({ health, rateLimitStore }: AppDependencies): Express {
   const app = express();
 
   app.set('trust proxy', env.TRUST_PROXY_HOPS);
@@ -24,7 +31,11 @@ export function createApp({ health }: AppDependencies): Express {
   app.use(securityHeaders);
   app.use(corsPolicy);
 
+  // Probes are never rate limited: throttling them would make healthy instances look dead.
   app.use('/health', createHealthRouter(health));
+
+  // Before body parsing, so rejected requests cost nothing to parse.
+  app.use(rateLimit(rateLimitStore, API_RATE_LIMIT));
   // Stage 15: the webhooks router mounts here, before JSON parsing (signatures need the raw body).
 
   app.use(jsonBody);

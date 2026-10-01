@@ -156,15 +156,25 @@ Middleware order in `app.ts`:
 | 1 | `requestId` | Built | Every later log line and error carries the ID. A caller's `X-Request-Id` is reused only if it matches `[A-Za-z0-9._:-]{1,128}`; otherwise a UUID is generated, which blocks log injection |
 | 2 | `requestLogger` (pino-http) | Built | One line per request (method, URL, status, duration; no headers). `error` for 5xx with the real error and stack, `warn` for 4xx, `info` otherwise; `/health*` is not logged |
 | 3 | `securityHeaders` (helmet) | Built | Security headers on every response, errors included; removes `X-Powered-By` |
-| 4 | `corsPolicy` | Built | Exact-origin allow-list from `CORS_ORIGINS`, empty by default (no browser origin allowed). Allows the `Authorization`, `Idempotency-Key` and `X-Request-Id` headers; exposes `X-Request-Id` |
-| 5 | **webhooks router** | Stage 15 | Mounted **before** JSON parsing: signature checks need the raw bytes |
-| 6 | `jsonBody` | Built | `express.json` with a 100 kB limit; malformed JSON → 400, oversized → 413 |
-| 7 | `rate-limit` | Stage 6 | Redis-backed, per IP and per user; stricter on auth and money routes |
-| 8 | `/api/v1` router | Per module | Per route: `authenticate → authorize(permission) → validate(schema) → controller` |
+| 4 | `corsPolicy` | Built | Exact-origin allow-list from `CORS_ORIGINS`, empty by default (no browser origin allowed). Allows the `Authorization`, `Idempotency-Key` and `X-Request-Id` headers; exposes `X-Request-Id`, `RateLimit-*` and `Retry-After` |
+| — | `/health` router | Built | Mounted here so probes skip rate limiting and body parsing |
+| 5 | `rateLimit` (global `api` policy) | Built | 300 requests/min per client IP, *before* body parsing so rejected requests cost nothing to parse (details below) |
+| 6 | **webhooks router** | Stage 15 | Mounted **before** JSON parsing: signature checks need the raw bytes |
+| 7 | `jsonBody` | Built | `express.json` with a 100 kB limit; malformed JSON → 400, oversized → 413 |
+| 8 | `/api/v1` router | Per module | Per route: `authenticate → rateLimit(policy) → authorize(permission) → validate(schema) → controller` |
 | 9 | `notFoundHandler` | Built | Unmatched routes get the standard `NOT_FOUND` body |
 | 10 | `errorHandler` | Built | `normalizeError` → `errorBody`; for 5xx it hands the real error to the request logger (`res.err`), so each failure is logged once, with request context |
 
 Implementation: [src/middleware/](../src/middleware/).
+
+### Rate limiting (*Built*)
+
+- **Algorithm:** fixed window per key, run in Redis as one Lua script (`INCR`, plus `PEXPIRE` on the first hit), so concurrent requests can't race past the count. A counter that lost its TTL is repaired instead of blocking its subject forever.
+- **Keys:** `rl:<policy>:<subject>`. The default subject is the client IP from `req.ip`, which honours `TRUST_PROXY_HOPS`. IPv4-mapped IPv6 is normalised to IPv4, and **IPv6 clients are grouped by /64**, because one user usually controls a whole /64 and could otherwise rotate addresses. Policies can key by user ID instead (auth, Stage 7).
+- **Responses:** `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset` (seconds) on every limited response; `429 RATE_LIMITED` with `Retry-After` when exceeded.
+- **Redis outages:** policies **fail open** by default. One Redis outage shouldn't take the API down, and abuse-sensitive flows have further layers (database login lockouts). A policy can set `failOpen: false` to answer `503` instead. The Redis client logs each outage once, and per-request fail-open notes are `debug` only.
+- **Redis client** (`src/config/redis.ts`): `enableOfflineQueue: false`, so commands fail immediately while disconnected and no request hangs on Redis. It reconnects in the background with backoff capped at 5 s, and connects at startup (`lazyConnect`), so importing it in tests opens no connection.
+- **Verified:** 21 unit tests (memory store, middleware, IPv6 grouping, fail-open/closed). The **exact Lua script** was run through ioredis-mock's Lua engine: counting, expiry, TTL repair, and 50 concurrent hits producing counts 1–50 exactly once. The real server with Redis unreachable served every request and logged the outage once. **Not yet verified against a real Redis server** (Docker; Stage 6 integration tests).
 
 ---
 
@@ -417,7 +427,7 @@ Constraints already decided:
 | Authorization | RBAC: routes require **permissions**, not role names; services verify resource ownership (prevents IDOR) |
 | Input | Zod on every endpoint; unknown fields rejected |
 | Transport | Helmet, CORS allow-list, body size limits, explicit `trust proxy` |
-| Abuse | Redis rate limits; stricter on login, OTP, password reset and money movement |
+| Abuse | Redis rate limits (*Built*: global 300/min per IP, IPv6 grouped by /64); stricter per-route policies on login, OTP, password reset and money movement as those modules are built |
 | Webhooks | HMAC over the raw body, constant-time comparison, event-ID dedupe |
 | Data | BVN/NIN encrypted at the application level; KYC documents in private storage |
 | Logging | Pino redaction of passwords, tokens, OTPs, `authorization` headers and identity numbers |
@@ -475,7 +485,9 @@ This reflects the repository as it stands, not the design.
 | Gap | Impact |
 |---|---|
 | A running server with health endpoints and no business modules yet; the module `.ts` files are placeholders | `/api/v1` returns 404 for every path until modules are mounted |
-| `/health/ready` checks the database but not Redis yet | It can report `ready` while Redis is down. The Redis check arrives with the Redis connection (Stage 6) |
+| `/health/ready` checks the database but not Redis yet | It can report `ready` while Redis is down. The Redis check is the next item (Stage 6) |
+| Rate limiting hasn't run against a real Redis server | The Lua script was verified on ioredis-mock's Lua engine; real Redis 8.8 waits for Docker and the Stage 6 integration tests |
+| ioredis 6 defaults to the RESP3 protocol | Fine for our commands on Redis 8. BullMQ's compatibility with ioredis 6 / RESP3 must be checked in Stage 16 |
 | Graceful shutdown → `disconnectDatabase()` hasn't been exercised end-to-end | Windows can't deliver SIGTERM to a Node process. The cleanup hook ordering is unit-tested; a real SIGTERM test runs once the app is in Docker (Stage 23) |
 | The init migration has only been run on PGlite (in-process PostgreSQL 18.3), not on the Docker database, and `prisma migrate` drift detection hasn't run (it needs a shadow database) | Low risk, same engine version, but `npm run db:migrate` against Docker is still the real test |
 | The 49 migration checks (30 constraints + 19 triggers) live in throwaway scripts | They need porting to `tests/integration` with Testcontainers (Stage 6) to keep guarding future migrations |

@@ -20,7 +20,14 @@ export function createCorsPolicy(allowedOrigins: readonly string[]) {
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', REQUEST_ID_HEADER],
-    exposedHeaders: [REQUEST_ID_HEADER],
+    // Let browser clients read request IDs and back off when rate limited.
+    exposedHeaders: [
+      REQUEST_ID_HEADER,
+      'RateLimit-Limit',
+      'RateLimit-Remaining',
+      'RateLimit-Reset',
+      'Retry-After',
+    ],
     maxAge: 600,
   });
 }

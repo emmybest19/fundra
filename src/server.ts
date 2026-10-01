@@ -5,13 +5,18 @@ import { registerShutdown } from './common/utils/shutdown.ts';
 import { checkDatabase, disconnectDatabase } from './config/database.ts';
 import { env } from './config/env.ts';
 import { logger } from './config/logger.ts';
+import { connectRedis, redis } from './config/redis.ts';
+import { RedisRateLimitStore } from './middleware/rate-limit.middleware.ts';
 import { HealthService } from './modules/health/health.service.ts';
 
 // The process starts even if a dependency is down; readiness reports 503 until it recovers,
 // so orchestrators hold traffic instead of crash-looping the app. Redis is added in Stage 6.
 const health = new HealthService([{ name: 'database', check: () => checkDatabase() }]);
 
-const server = createServer(createApp({ health }));
+// Connects in the background; until Redis is reachable the rate limiter fails open.
+connectRedis();
+
+const server = createServer(createApp({ health, rateLimitStore: new RedisRateLimitStore(redis) }));
 
 server.on('error', (err) => {
   logger.fatal({ err }, 'HTTP server failed');
