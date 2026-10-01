@@ -112,11 +112,12 @@ Known gaps are listed in [ARCHITECTURE.md §13](docs/ARCHITECTURE.md#13-known-de
 
 ## Getting started
 
-Requires **Node.js 24 LTS**.
+Requires **Node.js 24 LTS**. The exact version is pinned in `.nvmrc` (24.21.0), and `npm install` refuses to run on Node versions below 24 (`engines` + `engine-strict`).
 
 ```bash
 git clone <repo-url> fundra
 cd fundra
+nvm install 24.21.0 && nvm use 24.21.0
 npm install
 ```
 

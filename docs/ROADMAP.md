@@ -19,7 +19,7 @@ Legend: `[x]` done · `[ ]` to do
 ### Stage 2 — Dev environment
 - [ ] Install Docker Desktop
 - [x] `docker-compose.yml`: PostgreSQL 18.6 + Redis 8.8.3 (written; first `docker compose up` pending Docker)
-- [ ] `.nvmrc` + `engines` in package.json
+- [x] `.nvmrc` + `engines` in package.json (enforced via `.npmrc` `engine-strict`)
 
 ### Stage 3 — Tooling
 - [ ] `tsconfig.json` (strict)
