@@ -36,7 +36,7 @@ Legend: `[x]` done · `[ ]` to do
 ### Stage 5 — Database design
 - [x] ERD: all entities, keys, indexes, constraints ([DATABASE.md](DATABASE.md), 26 tables)
 - [x] Prisma 7 setup (`prisma.config.ts`, adapter-pg) + `config/database.ts` (real connection test pending Docker)
-- [ ] Full schema + first migration
+- [x] Full schema + first migration (26 tables, 41 CHECKs, 7 partial indexes; verified on PostgreSQL 18.3 via PGlite, apply to Docker DB pending)
 - [ ] Ledger triggers (no update/delete, balanced transactions)
 - [ ] Seed: roles, permissions, system ledger accounts
 - [ ] Register the `database` readiness check + close Prisma on shutdown
@@ -49,6 +49,7 @@ Legend: `[x]` done · `[ ]` to do
 - [ ] Idempotency service
 - [ ] Outbox writer
 - [ ] Testcontainers harness for integration tests
+- [ ] Port the 30 migration constraint checks (Stage 5) into integration tests
 
 ### Stage 7 — Auth
 - [ ] Register, login, logout (Argon2id)

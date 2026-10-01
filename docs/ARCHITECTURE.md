@@ -476,7 +476,8 @@ This reflects the repository as it stands, not the design.
 |---|---|
 | A running server with health endpoints and no business modules yet; the module `.ts` files are placeholders | `/api/v1` returns 404 for every path until modules are mounted |
 | `/health/ready` has no dependency checks registered | It reports `ready` even though nothing connects to PostgreSQL or Redis yet. Checks arrive with the connections in Stages 5–6 |
-| Prisma is configured but the schema has no models yet, and no database connection has been tested | Models and the first migration come in Stage 5, item 3. A real connection needs Docker; only "database unreachable" behaviour is verified so far |
+| The init migration has only been run on PGlite (in-process PostgreSQL 18.3), not on the Docker database, and `prisma migrate` drift detection hasn't run (it needs a shadow database) | Low risk, same engine version, but `npm run db:migrate` against Docker is still the real test |
+| The 30 migration constraint checks live in a throwaway script | They need porting to `tests/integration` with Testcontainers (Stage 6) to keep guarding future migrations |
 | A native PostgreSQL 16 Windows service (`postgresql-x64-16`) occupies port 5432 on the development machine, listening on all interfaces | Fundra's Docker database uses **5433** instead. That service is outside this project, but it's reachable from the local network |
 | Docker isn't installed on the development machine; PostgreSQL and Redis aren't available | Integration work is blocked until they are set up |
 | No `.env.example` (removed by choice) | New contributors can't see which variables are required; `config/env.ts` validation will be the only source of truth |

@@ -2,7 +2,7 @@
 
 > The PostgreSQL schema: every table, column, key, index and constraint, and why it exists. Written for developers implementing the Prisma schema and migrations (Stage 5) and for reviewers checking the financial model. The ledger concepts behind it are in [ARCHITECTURE.md §7](ARCHITECTURE.md#7-financial-core--designed).
 
-**Status: Designed (2026-10-01).** Nothing is migrated yet. Prisma models and the first migration follow from this document.
+**Status: Implemented as schema + migration (2026-10-01).** All 26 tables are in [prisma/schema.prisma](../prisma/schema.prisma) and the first migration (`prisma/migrations/*_init`). The migration was verified on PostgreSQL 18.3 (PGlite, in-process), not yet on the Docker database. Ledger triggers follow in Stage 5, item 4.
 
 ---
 
@@ -515,7 +515,12 @@ The application checks all of these first, so it can return clear errors. The da
 | 11 | One BVN/NIN per verified identity | Unique `bvn_hmac` / `nin_hmac` |
 | 12 | Valid formats (handles, phones, references, account numbers) | `CHECK` regexes |
 
-Rules 1, 3 and 4, and the partial indexes, aren't expressible in Prisma's schema language. They go into the migration as hand-written SQL (Stage 5, item 4).
+Where each rule lives:
+- **Partial indexes** are declared in `schema.prisma` with Prisma's `partialIndexes` preview feature, so later migrations keep them.
+- **CHECK constraints** (41) can't be expressed in Prisma's schema language. They are hand-written SQL at the end of the init migration.
+- **Rules 1, 3 and 4** need triggers: hand-written SQL in a separate migration (Stage 5, item 4).
+
+**Verification (2026-10-01).** The init migration was applied to PostgreSQL 18.3 running in-process (PGlite), since Docker wasn't available yet. The catalogue held exactly 26 tables, 41 checks, 34 foreign keys and 7 partial indexes. 30 checks then confirmed that valid data is accepted, and that each bad insert is rejected by the specific constraint meant to stop it: overdraft, currency mismatch on the composite keys, duplicate webhook, reused idempotency key, double reversal, two active fee rules, and so on. Those checks become permanent integration tests in Stage 6.
 
 ---
 

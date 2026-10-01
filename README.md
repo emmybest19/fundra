@@ -107,7 +107,8 @@ docs/              project definition, architecture, case study, API, security
 | Tooling: TypeScript (strict, ESM), scripts, ESLint, Prettier, Vitest | Done |
 | App skeleton: config, logging, errors, middleware, server, health, shutdown | Done (108 unit tests) |
 | Docker, PostgreSQL, Redis | `docker-compose.yml` written; not yet run (Docker Desktop not installed) |
-| Database/ERD, Prisma, ledger design | Next (Stage 5) |
+| Database design, Prisma, schema + first migration | Done ([DATABASE.md](docs/DATABASE.md)); not yet applied to the Docker database |
+| Ledger triggers, seed data | Next (Stage 5) |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).

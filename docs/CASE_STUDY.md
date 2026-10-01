@@ -116,7 +116,18 @@ Three things surfaced while wiring up Prisma 7:
 
 *Principle:* an unexpected success, such as a connection that shouldn't work, deserves the same investigation as a failure.
 
-### 5.6 Design challenges solved on paper
+### 5.6 Testing a migration without a database server
+
+A 700-line migration that has never run is a liability, and Docker wasn't installed yet. Two tools closed the gap without adding project dependencies:
+
+- `prisma migrate diff --from-empty --to-schema` produces the migration SQL with no database connection.
+- **PGlite**, PostgreSQL compiled to WebAssembly and installed in a scratch folder, turned out to be **PostgreSQL 18.3**, the same major version as the Docker image, so even `uuidv7()` worked natively.
+
+A script applied the migration and tried to break every rule. The first run reported 2 failures, but both bad inserts had been rejected, just by a different constraint than the test intended (for example, a negative balance also violates `0 ≤ available ≤ ledger`, which fires first). Rewriting each test so only one rule could possibly fire turned a vague "it was rejected" into "rejected by exactly the constraint meant to catch it", for all 30 cases.
+
+*Principle:* a constraint test should assert *which* rule rejected the data. Otherwise a test can pass because a different rule happened to catch the problem, and the rule it claims to test may not work at all.
+
+### 5.7 Design challenges solved on paper
 
 These are designed in [ARCHITECTURE.md](ARCHITECTURE.md) and will be proven by tests as they are built:
 
