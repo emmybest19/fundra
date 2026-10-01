@@ -108,7 +108,7 @@ routes → middleware → controller → service → (repository) → Prisma →
 2. **`ledger.service` is the only code that writes ledger entries or changes wallet balances.** It is the single enforcement point for "debits = credits".
 3. **The orchestrating service owns the transaction boundary.** It opens a Prisma interactive transaction and passes the transaction client (`tx`) down.
 4. **Dependencies point downward and are never circular.** Ledger, audit and wallets never import transfers, payments or admin.
-5. **Only `config/env.ts` reads `process.env`.** Everything else imports typed config.
+5. **Only `config/env.ts` reads `process.env`.** Everything else imports typed config. ESLint enforces this (`no-restricted-properties`).
 6. **Repositories only where they earn their place.** Most services use Prisma directly. The ledger has a repository because it needs `SELECT … FOR UPDATE`, which Prisma's query API does not provide.
 
 ```mermaid
@@ -466,7 +466,7 @@ This reflects the repository as it stands, not the design.
 | `prisma/schema.prisma` has no datasource or generator, and there's no `prisma.config.ts` | Prisma 7 can't generate a client or run migrations |
 | Docker isn't installed on the development machine; PostgreSQL and Redis aren't available | Integration work is blocked until they are set up |
 | No `.env.example` (removed by choice) | New contributors can't see which variables are required; `config/env.ts` validation will be the only source of truth |
-| ESLint, Prettier, Vitest, Supertest and Testcontainers aren't installed | No linting, formatting or tests; no `lint`, `format` or `test` scripts |
+| Vitest, Supertest and Testcontainers aren't installed | No tests and no `test` script |
 | `npm audit`: 4 high-severity advisories, all inside the `prisma` development tool (`mysql2`, `deepmerge-ts`) | Not shipped in the API runtime; npm's only fix is downgrading to Prisma 6, which was rejected |
 | TypeScript held at 6.0.3, not 7.x | typescript-eslint supports TypeScript `<6.1.0` |
 

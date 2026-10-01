@@ -24,7 +24,7 @@ Legend: `[x]` done · `[ ]` to do
 ### Stage 3 — Tooling
 - [x] `tsconfig.json` (strict) + `tsconfig.build.json`; project switched to ES modules
 - [x] npm scripts: `dev`, `dev:worker`, `build`, `clean`, `start`, `start:worker`, `typecheck` (Node 24 runs `.ts` natively; no tsx/ts-node)
-- [ ] ESLint + Prettier (+ `lint`, `format` scripts)
+- [x] ESLint 10 (strict type-checked + money/config rules) + Prettier 3 (+ `lint`, `format` scripts)
 - [ ] Vitest + Supertest (+ `test` scripts)
 
 ### Stage 4 — App skeleton

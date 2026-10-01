@@ -44,8 +44,10 @@ Versions are exactly as installed.
 | Cache / queues | Redis (Docker image `redis:8.8.3-alpine`) · ioredis · BullMQ | 8.8.3 · 6.0.0 · 6.3.11 |
 | Logging | Pino · pino-http · pino-pretty (dev) | 10.3.1 · 11.0.0 · 13.1.3 |
 | HTTP security | helmet · cors | 8.3.0 · 2.8.6 |
+| Linting | ESLint · typescript-eslint | 10.11.0 · 8.71.0 |
+| Formatting | Prettier | 3.9.9 |
 
-Planned but not yet installed: ESLint, Prettier, Vitest, Supertest, Testcontainers, OpenAPI tooling, Docker, GitHub Actions.
+Planned but not yet installed: Vitest, Supertest, Testcontainers, OpenAPI tooling, GitHub Actions. Docker Desktop is required locally (see Getting started).
 
 Why TypeScript 6 and Prisma 7 rather than the newest majors: see [CASE_STUDY.md §5.1](docs/CASE_STUDY.md#51-latest-isnt-always-stable).
 
@@ -104,7 +106,8 @@ docs/              project definition, architecture, case study, API, security
 | Database/ERD, ledger design, API spec | Next |
 | TypeScript config (strict, ESM) | Done |
 | npm scripts (dev, build, start, typecheck) | Done |
-| Linting, formatting, test runner, Prisma config | Not started |
+| Linting + formatting (ESLint, Prettier) | Done |
+| Test runner, Prisma config | Not started |
 | Docker, PostgreSQL, Redis | `docker-compose.yml` written; not yet run (Docker Desktop not installed) |
 | Modules, tests, CI, deployment | Not started |
 
@@ -146,10 +149,18 @@ Both services listen on `127.0.0.1` only, so they aren't reachable from your net
 | `npm run build` | Cleans `dist/` and compiles `src/` to JavaScript |
 | `npm start` / `npm run start:worker` | Runs the compiled API / worker from `dist/` |
 | `npm run clean` | Deletes `dist/` |
+| `npm run lint` / `lint:fix` | ESLint (strict, type-aware) / auto-fix what it can |
+| `npm run format` / `format:check` | Prettier write / check (Markdown is excluded) |
 
 Development runs `.ts` files directly with Node 24's built-in type stripping, so there's no `tsx` or `ts-node`. Because of that, relative imports use the **`.ts`** extension (`import { x } from './x.ts'`). The build rewrites them to `.js`.
 
-Commands for linting, tests and migrations will be added as each tool is set up.
+Lint rules specific to Fundra:
+- no `console`; use the Pino logger
+- no `parseFloat`; money is `bigint` kobo
+- `process.env` only in `src/config/env.ts`
+- `switch` statements over statuses must handle every case
+
+Commands for tests and migrations will be added as each tool is set up.
 
 Configuration lives in a local `.env` file, which git ignores. Required variables will be validated at startup by `src/config/env.ts`.
 

@@ -1,0 +1,9 @@
+dist/
+coverage/
+node_modules/
+src/generated/
+prisma/migrations/
+package-lock.json
+
+# Docs are hand-written prose; Prettier would re-align every table.
+*.md

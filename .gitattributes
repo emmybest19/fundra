@@ -1,0 +1,6 @@
+# Store and check out text files with LF so Prettier's endOfLine "lf" holds on Windows too.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.pdf binary
