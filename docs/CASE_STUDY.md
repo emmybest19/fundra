@@ -106,7 +106,17 @@ npm 11 skips package install scripts unless they're explicitly approved. Without
 
 Node 24 runs `.ts` files directly by stripping type annotations. That removes the usual dev-time dependency (`tsx`, `ts-node`, `nodemon`), and `node --watch --env-file-if-exists=.env` covers auto-restart and env loading. The catch is that Node resolves imports literally: `import './x.js'` fails when only `x.ts` exists. The fix is to write imports with `.ts` extensions and let TypeScript rewrite them to `.js` at build time (`allowImportingTsExtensions` + `rewriteRelativeImportExtensions`). `erasableSyntaxOnly` makes the compiler reject syntax that can't simply be stripped, such as `enum`, so code that type-checks is guaranteed to run unmodified. This was checked with a probe module run three ways: from source, after `tsc`, and from `dist/`.
 
-### 5.5 Design challenges solved on paper
+### 5.5 Prisma 7 and a database that wasn't ours
+
+Three things surfaced while wiring up Prisma 7:
+
+- **Code generation shouldn't need a database.** The documented pattern, `url: env('DATABASE_URL')` in `prisma.config.ts`, throws when the variable is missing, so `prisma generate` fails too. That breaks CI and Docker builds, which generate the client long before a database exists. The datasource is now only configured when the URL is present: `generate` always works, and `migrate` still fails with Prisma's own clear message.
+- **No `dotenv` needed.** Prisma 7 stopped loading `.env`, and the docs suggest adding `dotenv`. Node's built-in `process.loadEnvFile()` does the same job without a dependency.
+- **"Authentication failed" from a database that shouldn't exist.** Before Docker was even installed, `prisma migrate status` reached *something* on port 5432. It turned out to be a native PostgreSQL **16** Windows service. It would have blocked the Docker container's port, and it's too old for the design (`uuidv7()` is new in PostgreSQL 18). Fundra's container moved to port 5433 rather than touching a service other projects may rely on.
+
+*Principle:* an unexpected success, such as a connection that shouldn't work, deserves the same investigation as a failure.
+
+### 5.6 Design challenges solved on paper
 
 These are designed in [ARCHITECTURE.md](ARCHITECTURE.md) and will be proven by tests as they are built:
 
@@ -138,7 +148,7 @@ These are designed in [ARCHITECTURE.md](ARCHITECTURE.md) and will be proven by t
 Immediate (project initialization and configuration):
 1. Install Docker and add a `docker-compose.yml` for PostgreSQL and Redis. Nothing that touches data can be tested until this exists.
 2. ~~Add `tsconfig.json` (strict), fix the `package.json` `main`/`type` fields, and add `dev`/`build`/`start` scripts.~~ Done. `lint` and `test` scripts arrive with their tools.
-3. Configure Prisma 7 (`prisma.config.ts`, datasource, generator).
+3. ~~Configure Prisma 7 (`prisma.config.ts`, datasource, generator).~~ Done in Stage 5 (see §5.5).
 4. ~~Install ESLint, Prettier, Vitest and Supertest, so tests are written alongside each module rather than at step 23.~~ Done in Stage 3. Testcontainers follows in Stage 6.
 5. ~~Resolve the open decisions D1–D6 before the database design.~~ Done in Stage 1 ([ARCHITECTURE.md §14](ARCHITECTURE.md#14-decisions)).
 

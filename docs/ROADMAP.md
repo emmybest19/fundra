@@ -35,7 +35,7 @@ Legend: `[x]` done · `[ ]` to do
 
 ### Stage 5 — Database design
 - [x] ERD: all entities, keys, indexes, constraints ([DATABASE.md](DATABASE.md), 26 tables)
-- [ ] Prisma 7 setup (`prisma.config.ts`, adapter-pg) + `config/database.ts`
+- [x] Prisma 7 setup (`prisma.config.ts`, adapter-pg) + `config/database.ts` (real connection test pending Docker)
 - [ ] Full schema + first migration
 - [ ] Ledger triggers (no update/delete, balanced transactions)
 - [ ] Seed: roles, permissions, system ledger accounts

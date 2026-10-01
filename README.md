@@ -175,7 +175,18 @@ Lint rules specific to Fundra:
 - `process.env` only in `src/config/env.ts`
 - `switch` statements over statuses must handle every case
 
-Migration commands will be added when Prisma is configured (Stage 5).
+### Database scripts
+
+| Command | What it does |
+|---|---|
+| `npm run db:generate` | Regenerates the typed Prisma client into `src/generated/` (git-ignored; also runs automatically on `npm install`) |
+| `npm run db:migrate` | Creates and applies a migration in development (`prisma migrate dev`) |
+| `npm run db:deploy` | Applies pending migrations without prompts (CI, production) |
+| `npm run db:status` | Shows which migrations are applied |
+| `npm run db:seed` | Runs `prisma/seed.ts` |
+| `npm run db:studio` | Opens Prisma Studio to browse data |
+
+Prisma reads its settings from `prisma.config.ts`, which loads `.env` with Node's built-in loader. `db:generate` works without `DATABASE_URL`; the other commands need it.
 
 ### Environment variables
 
@@ -186,12 +197,12 @@ Configuration lives in a local `.env` file, which git ignores. `src/config/env.t
 | `NODE_ENV` | no | `development` | `development` · `test` · `production` |
 | `PORT` | no | `3000` | 1–65535 |
 | `LOG_LEVEL` | no | `info` (`silent` under test) | `fatal` · `error` · `warn` · `info` · `debug` · `trace` · `silent` |
-| `DATABASE_URL` | **yes** | — | `postgresql://user:pass@localhost:5432/fundra?schema=public` |
+| `DATABASE_URL` | **yes** | — | `postgresql://user:pass@localhost:5433/fundra?schema=public` (port must match `POSTGRES_PORT`) |
 | `REDIS_URL` | **yes** | — | `redis://:pass@localhost:6379` (`rediss://` for TLS) |
 | `CORS_ORIGINS` | no | *(empty: no browser origin allowed)* | Comma-separated exact origins, e.g. `https://app.fundra.dev,http://localhost:5173` |
 | `TRUST_PROXY_HOPS` | no | `0` | Number of reverse proxies in front of the app (0–10). Keep `0` unless behind a load balancer; otherwise clients could fake their IP with `X-Forwarded-For` |
 | `POSTGRES_USER` · `POSTGRES_PASSWORD` · `POSTGRES_DB` · `REDIS_PASSWORD` | for Docker | — | Read by `docker-compose.yml`, not the app |
-| `POSTGRES_PORT` · `REDIS_PORT` | no | `5432` · `6379` | Host ports used by `docker-compose.yml` |
+| `POSTGRES_PORT` · `REDIS_PORT` | no | `5432` · `6379` | Host ports used by `docker-compose.yml`. Set `POSTGRES_PORT=5433` if another PostgreSQL already uses 5432 (the case on the original dev machine) |
 
 Logs are JSON in production, colourised in development (pino-pretty), and silent in tests. Passwords, tokens, OTPs, PINs, BVN/NIN and auth/cookie headers are replaced with `[REDACTED]`.
 

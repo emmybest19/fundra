@@ -82,7 +82,6 @@ Planned additions, created when the relevant module is built:
 | `src/modules/payments/payment.schema.ts` | Zod schemas (missing from the initial layout) |
 | `src/common/idempotency/` | Idempotency service + middleware |
 | `src/common/outbox/` | Transactional outbox writer |
-| `prisma.config.ts` | Required by Prisma 7 for datasource configuration |
 
 ---
 
@@ -477,7 +476,8 @@ This reflects the repository as it stands, not the design.
 |---|---|
 | A running server with health endpoints and no business modules yet; the module `.ts` files are placeholders | `/api/v1` returns 404 for every path until modules are mounted |
 | `/health/ready` has no dependency checks registered | It reports `ready` even though nothing connects to PostgreSQL or Redis yet. Checks arrive with the connections in Stages 5–6 |
-| `prisma/schema.prisma` has no datasource or generator, and there's no `prisma.config.ts` | Prisma 7 can't generate a client or run migrations |
+| Prisma is configured but the schema has no models yet, and no database connection has been tested | Models and the first migration come in Stage 5, item 3. A real connection needs Docker; only "database unreachable" behaviour is verified so far |
+| A native PostgreSQL 16 Windows service (`postgresql-x64-16`) occupies port 5432 on the development machine, listening on all interfaces | Fundra's Docker database uses **5433** instead. That service is outside this project, but it's reachable from the local network |
 | Docker isn't installed on the development machine; PostgreSQL and Redis aren't available | Integration work is blocked until they are set up |
 | No `.env.example` (removed by choice) | New contributors can't see which variables are required; `config/env.ts` validation will be the only source of truth |
 | No tests written yet; Testcontainers not installed (Stage 6) | `passWithNoTests` is on in `vitest.config.ts`, so empty test runs pass. Turn it off once every project has tests |

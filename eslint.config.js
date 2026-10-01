@@ -59,8 +59,9 @@ export default defineConfig(
   },
 
   {
-    // The one place allowed to read process.env.
-    files: ['src/config/env.ts'],
+    // The only places allowed to read process.env: app config, and the Prisma CLI config
+    // (which runs outside the app, before env.ts could validate anything).
+    files: ['src/config/env.ts', 'prisma.config.ts'],
     rules: { 'no-restricted-properties': 'off' },
   },
 

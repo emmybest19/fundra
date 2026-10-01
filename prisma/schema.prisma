@@ -1,1 +1,16 @@
-// Prisma schema: designed in the Database/ERD step.
+// Fundra database schema. Design and rationale: docs/DATABASE.md.
+// The connection URL lives in prisma.config.ts (Prisma 7), not here.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  // Node runs our TypeScript directly, so generated imports must use .ts (see README, Scripts).
+  importFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Models are added in Stage 5, item 3.
