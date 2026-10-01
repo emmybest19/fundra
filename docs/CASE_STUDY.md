@@ -133,7 +133,7 @@ These are designed in [ARCHITECTURE.md](ARCHITECTURE.md) and will be proven by t
 
 Immediate (project initialization and configuration):
 1. Install Docker and add a `docker-compose.yml` for PostgreSQL and Redis. Nothing that touches data can be tested until this exists.
-2. Add `tsconfig.json` (strict), npm scripts (`dev`, `build`, `start`, `lint`, `test`) and fix the `package.json` `main`/`type` fields.
+2. ~~Add `tsconfig.json` (strict) and fix the `package.json` `main`/`type` fields.~~ Done: strict, native ESM. Still to add: npm scripts (`dev`, `build`, `start`, `lint`, `test`).
 3. Configure Prisma 7 (`prisma.config.ts`, datasource, generator).
 4. Install ESLint, Prettier, Vitest, Supertest and Testcontainers, so tests are written alongside each module rather than at step 23.
 5. ~~Resolve the open decisions D1–D6 before the database design.~~ Done in Stage 1 ([ARCHITECTURE.md §14](ARCHITECTURE.md#14-decisions)).

@@ -102,7 +102,8 @@ docs/              project definition, architecture, case study, API, security
 | Dependencies | Installed |
 | Module scaffold | Done; files hold responsibility comments only |
 | Database/ERD, ledger design, API spec | Next |
-| TypeScript config, scripts, Prisma config | Not started |
+| TypeScript config (strict, ESM) | Done |
+| npm scripts, linting, test runner, Prisma config | Not started |
 | Docker, PostgreSQL, Redis | `docker-compose.yml` written; not yet run (Docker Desktop not installed) |
 | Modules, tests, CI, deployment | Not started |
 

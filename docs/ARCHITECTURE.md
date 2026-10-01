@@ -463,8 +463,7 @@ This reflects the repository as it stands, not the design.
 | Gap | Impact |
 |---|---|
 | No application code; all 69 `.ts` files are placeholders | Nothing runs yet |
-| No `tsconfig.json` | TypeScript is installed but not configured; `tsc` can't build the project |
-| `package.json` has `"main": "index.js"` (the file doesn't exist), `"type": "commonjs"`, and only the default failing `test` script | No `dev`, `build`, `start` or `lint` commands yet |
+| `package.json` has only the default failing `test` script | No `dev`, `build`, `start` or `lint` commands yet; run `npx tsc -p tsconfig.json` (check) or `npx tsc -p tsconfig.build.json` (build) by hand |
 | `prisma/schema.prisma` has no datasource or generator, and there's no `prisma.config.ts` | Prisma 7 can't generate a client or run migrations |
 | Docker isn't installed on the development machine; PostgreSQL and Redis aren't available | Integration work is blocked until they are set up |
 | No `.env.example` (removed by choice) | New contributors can't see which variables are required; `config/env.ts` validation will be the only source of truth |

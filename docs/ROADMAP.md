@@ -22,7 +22,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] `.nvmrc` + `engines` in package.json (enforced via `.npmrc` `engine-strict`)
 
 ### Stage 3 — Tooling
-- [ ] `tsconfig.json` (strict)
+- [x] `tsconfig.json` (strict) + `tsconfig.build.json`; project switched to ES modules
 - [ ] npm scripts: `dev`, `build`, `start`, `lint`, `format`, `test`, `typecheck`
 - [ ] ESLint + Prettier
 - [ ] Vitest + Supertest
