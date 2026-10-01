@@ -29,7 +29,7 @@ Legend: `[x]` done · `[ ]` to do
 
 ### Stage 4 — App skeleton
 - [x] `config/env.ts` (Zod-validated env), `config/logger.ts` (Pino + redaction), 24 unit tests
-- [ ] `common/errors` + response envelope
+- [x] `common/errors` (error classes, code catalogue, `normalizeError`) + response envelope, 35 unit tests
 - [ ] Request-ID, error and 404 middleware; helmet, cors, JSON limits
 - [ ] `app.ts`, `server.ts`, graceful shutdown, `/health/live` + `/health/ready`
 

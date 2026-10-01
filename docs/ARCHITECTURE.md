@@ -432,13 +432,13 @@ Detailed controls will be documented in [security.md](security.md) as each modul
 **API**
 - Base path `/api/v1`.
 - Success envelope `{ data, meta }`; error envelope `{ error: { code, message, details, requestId } }`.
-- Status codes: 200, 201, 202, 204, 400, 401, 403, 404, 409, 422, 429, 500.
+- Status codes: 200, 201, 202, 204, 400, 401, 403, 404, 409, 413, 422, 429, 500, 503.
 - Cursor pagination for histories; filters and sorts restricted to whitelisted fields.
 - `Idempotency-Key` required on money-moving `POST`s.
 - OpenAPI generated from the Zod schemas.
 - Endpoint contracts will be documented in [api.md](api.md).
 
-**Errors:** `AppError` subclasses with a stable `code` and HTTP status. Services throw them, and the error middleware maps them to the envelope. Prisma errors are translated at the service boundary; unknown errors become `500 INTERNAL_ERROR`.
+**Errors (*Built*):** `AppError` subclasses in `src/common/errors/` carry a stable `code` from a single catalogue (`error-codes.ts`) and an HTTP status. Services throw them. `normalizeError()` converts anything else: Zod failures become `422 VALIDATION_ERROR` with field paths but no submitted values, body-parser failures become 400/413, and everything unknown becomes `500 INTERNAL_ERROR`, with the original kept as `cause` for logs only. `errorBody()` replaces 5xx messages with a generic one and drops their details, so internal information can't leak. Prisma errors will be translated at the service boundary (Stage 5). The full code table is in [api.md](api.md#error-codes).
 
 **Configuration:** `config/env.ts` validates `process.env` with Zod at startup. The process refuses to start if config is missing or invalid.
 
@@ -462,7 +462,7 @@ This reflects the repository as it stands, not the design.
 
 | Gap | Impact |
 |---|---|
-| Application code limited to `config/env.ts` and `config/logger.ts`; the remaining `.ts` files are placeholders | No HTTP server yet |
+| Application code limited to `config/` (env, logger) and `common/` (errors, response envelopes); the remaining `.ts` files are placeholders | No HTTP server yet |
 | `prisma/schema.prisma` has no datasource or generator, and there's no `prisma.config.ts` | Prisma 7 can't generate a client or run migrations |
 | Docker isn't installed on the development machine; PostgreSQL and Redis aren't available | Integration work is blocked until they are set up |
 | No `.env.example` (removed by choice) | New contributors can't see which variables are required; `config/env.ts` validation will be the only source of truth |
