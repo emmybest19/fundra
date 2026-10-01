@@ -34,7 +34,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] `app.ts`, `server.ts`, graceful shutdown, `/health/live` + `/health/ready` (readiness checks registered in Stages 5–6)
 
 ### Stage 5 — Database design
-- [ ] ERD: all entities, keys, indexes, constraints
+- [x] ERD: all entities, keys, indexes, constraints ([DATABASE.md](DATABASE.md), 26 tables)
 - [ ] Prisma 7 setup (`prisma.config.ts`, adapter-pg) + `config/database.ts`
 - [ ] Full schema + first migration
 - [ ] Ledger triggers (no update/delete, balanced transactions)

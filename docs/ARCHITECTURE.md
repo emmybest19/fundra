@@ -371,9 +371,9 @@ The brief lists idempotency keys under Redis. They are deliberately kept in **Po
 
 ---
 
-## 10. Data model — *Designed (provisional)*
+## 10. Data model — *Designed*
 
-`prisma/schema.prisma` is currently empty. The diagram below shows the intended relationships. Columns, indexes and constraints are settled in the Database/ERD step.
+The full design (26 tables with every column, key, index, constraint and database-enforced rule) is in **[DATABASE.md](DATABASE.md)**. The overview below is the conceptual model it implements.
 
 ```mermaid
 erDiagram
