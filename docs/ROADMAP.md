@@ -41,14 +41,14 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Seed: roles, permissions, system ledger accounts (+ tier limits, fee rule, MOCK provider; atomic, re-runnable; verified via pglite-socket)
 - [x] Register the `database` readiness check + close Prisma on shutdown (live down/up/down/up test passed)
 
-### Stage 6 — Shared infrastructure
+### Stage 6 — Shared infrastructure (items 1–6 ✅; item 7 deferred until Docker is installed)
 - [x] `config/redis.ts` + rate-limit middleware (global 300/min per IP; Lua verified on ioredis-mock, real Redis pending Docker)
 - [x] Register the `redis` readiness check + close Redis on shutdown (non-critical → `degraded`; verified live)
 - [x] Validation middleware (Zod): typed `validated()` wrapper + shared validators (amount, currency, uuid, pagination)
 - [x] Audit service (transactional, sanitized metadata; append-only errors now `FN001`, verified via Prisma)
 - [x] Idempotency service (claim → fenced transaction → complete; 20/21 scenarios on PostgreSQL 18.3; schema drift check now clean)
 - [x] Outbox writer (typed event catalogue, transactional; verified incl. no duplicate event on idempotent replay)
-- [ ] Testcontainers harness for integration tests
+- [ ] Testcontainers harness for integration tests: **deferred (2026-10-02), needs Docker Desktop**. Until then, database behaviour is verified with scratch scripts on PGlite (PostgreSQL 18.3); the items below are what this suite must cover
 - [ ] Port the 49 migration checks from Stage 5 (30 constraints + 19 triggers) into integration tests
 - [ ] Integration test for the rate-limit Lua script on real Redis 8.8 (counting, expiry, TTL repair, concurrency)
 - [ ] Integration tests for idempotency on real PostgreSQL: all 10 scenarios, plus true concurrency (N parallel requests → one execution) and row-lock waits during takeover
