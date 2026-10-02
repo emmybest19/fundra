@@ -413,6 +413,14 @@ If the API enqueued jobs right after committing, a crash between the commit and 
 
 Delivery is therefore **at-least-once**, so every handler is idempotent and keyed by event ID.
 
+**Writer (*Built*):** `writeOutboxEvent(tx, event)` in [src/common/outbox](../src/common/outbox/) returns the event ID, which is used as the BullMQ job ID.
+- **Typed catalogue:** `OutboxEventPayloads` maps each event type (`transfer.completed`, `kyc.status_changed`, …) to its exact payload; an unknown type or wrong payload doesn't compile.
+- **Minimal payloads:** they carry identifiers and facts, not personal data, and amounts are minor-unit strings. Consumers load names and contact details at send time.
+- **Fails before COMMIT:** a non-JSON-safe or over-16 KB payload throws, so the business action rolls back rather than committing without its event.
+- **Verified on PostgreSQL 18.3 via Prisma:** committed with its transaction; absent after a rollback (no phantom notification); and an idempotent retry replayed **without a second event**.
+
+The relay that publishes events to BullMQ is Stage 16.
+
 ### 9.2 Queues
 
 | Queue | Jobs |

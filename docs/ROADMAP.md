@@ -47,7 +47,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Validation middleware (Zod): typed `validated()` wrapper + shared validators (amount, currency, uuid, pagination)
 - [x] Audit service (transactional, sanitized metadata; append-only errors now `FN001`, verified via Prisma)
 - [x] Idempotency service (claim → fenced transaction → complete; 20/21 scenarios on PostgreSQL 18.3; schema drift check now clean)
-- [ ] Outbox writer
+- [x] Outbox writer (typed event catalogue, transactional; verified incl. no duplicate event on idempotent replay)
 - [ ] Testcontainers harness for integration tests
 - [ ] Port the 49 migration checks from Stage 5 (30 constraints + 19 triggers) into integration tests
 - [ ] Integration test for the rate-limit Lua script on real Redis 8.8 (counting, expiry, TTL repair, concurrency)
@@ -100,7 +100,7 @@ Legend: `[x]` done · `[ ]` to do
 
 ### Stage 16 — Background jobs
 - [ ] Queues + worker process (`jobs/workers.ts`); confirm BullMQ works with ioredis 6 (RESP3 default); close queues first in shutdown cleanup
-- [ ] Outbox relay
+- [ ] Outbox relay (`SELECT … FOR UPDATE SKIP LOCKED` batches, job ID = event ID, increment `attempts`, mark `published_at`)
 - [ ] `expire-otp`
 
 ### Stage 17 — Notifications
