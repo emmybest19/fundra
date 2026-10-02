@@ -44,3 +44,31 @@ export function connectRedis(client: Redis = redis): void {
     // Already logged by the 'error' handler; ioredis keeps retrying.
   });
 }
+
+/**
+ * Readiness probe: resolves only if Redis answers PING. Error replies (e.g. LOADING while
+ * Redis restores data) and connection failures reject.
+ */
+export async function checkRedis(client: Pick<Redis, 'ping'> = redis): Promise<void> {
+  await client.ping();
+}
+
+/**
+ * Closes the connection for shutdown. QUIT lets pending replies finish when connected;
+ * otherwise (mid-outage) a hard disconnect also stops the reconnect loop, which would
+ * keep the process alive.
+ */
+export async function disconnectRedis(
+  client: Pick<Redis, 'status' | 'quit' | 'disconnect'> = redis,
+): Promise<void> {
+  if (client.status === 'end') return;
+  if (client.status === 'ready') {
+    try {
+      await client.quit();
+      return;
+    } catch {
+      // Fall through to a hard disconnect.
+    }
+  }
+  client.disconnect();
+}

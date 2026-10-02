@@ -22,11 +22,35 @@ describe('HealthService.readiness', () => {
     expect(report).toEqual({ status: 'ready', checks: { database: 'up', redis: 'up' } });
   });
 
-  it('is unavailable when any check fails, without exposing the reason', async () => {
-    const report = await new HealthService([up('database'), down('redis')]).readiness();
+  it('is unavailable when a critical check fails, without exposing the reason', async () => {
+    const report = await new HealthService([down('database'), up('redis')]).readiness();
 
-    expect(report).toEqual({ status: 'unavailable', checks: { database: 'up', redis: 'down' } });
+    expect(report).toEqual({ status: 'unavailable', checks: { database: 'down', redis: 'up' } });
     expect(JSON.stringify(report)).not.toContain('ECONNREFUSED');
+  });
+
+  it('treats checks as critical unless marked otherwise', async () => {
+    const report = await new HealthService([down('anything')]).readiness();
+
+    expect(report.status).toBe('unavailable');
+  });
+
+  it('is degraded, not unavailable, when only non-critical checks fail', async () => {
+    const report = await new HealthService([
+      up('database'),
+      { ...down('redis'), critical: false },
+    ]).readiness();
+
+    expect(report).toEqual({ status: 'degraded', checks: { database: 'up', redis: 'down' } });
+  });
+
+  it('is unavailable when critical and non-critical checks both fail', async () => {
+    const report = await new HealthService([
+      down('database'),
+      { ...down('redis'), critical: false },
+    ]).readiness();
+
+    expect(report.status).toBe('unavailable');
   });
 
   it('marks a check that exceeds the timeout as down instead of hanging', async () => {

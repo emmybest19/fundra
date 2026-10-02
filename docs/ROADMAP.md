@@ -43,7 +43,7 @@ Legend: `[x]` done · `[ ]` to do
 
 ### Stage 6 — Shared infrastructure
 - [x] `config/redis.ts` + rate-limit middleware (global 300/min per IP; Lua verified on ioredis-mock, real Redis pending Docker)
-- [ ] Register the `redis` readiness check + close Redis on shutdown
+- [x] Register the `redis` readiness check + close Redis on shutdown (non-critical → `degraded`; verified live)
 - [ ] Validation middleware (Zod)
 - [ ] Audit service
 - [ ] Idempotency service
@@ -56,7 +56,7 @@ Legend: `[x]` done · `[ ]` to do
 - [ ] Register, login, logout (Argon2id)
 - [ ] Access tokens + rotating refresh tokens with reuse detection
 - [ ] Sessions + devices
-- [ ] Email/phone verification (OTP), password reset
+- [ ] Email/phone verification (OTP), password reset (OTPs live in Redis: revisit whether the `redis` readiness check becomes critical)
 - [ ] `authenticate` + `authorize(permission)` middleware (RBAC)
 
 ### Stage 8 — Users
@@ -96,7 +96,7 @@ Legend: `[x]` done · `[ ]` to do
 - [ ] `process-webhook` dispatch to payments
 
 ### Stage 16 — Background jobs
-- [ ] Queues + worker process (`jobs/workers.ts`); confirm BullMQ works with ioredis 6 (RESP3 default)
+- [ ] Queues + worker process (`jobs/workers.ts`); confirm BullMQ works with ioredis 6 (RESP3 default); close queues first in shutdown cleanup
 - [ ] Outbox relay
 - [ ] `expire-otp`
 

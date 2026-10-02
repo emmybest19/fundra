@@ -149,8 +149,9 @@ Run the API:
 ```bash
 npm run dev                                   # http://localhost:3000, restarts on file changes
 curl http://localhost:3000/health/live        # {"status":"ok"}
-curl http://localhost:3000/health/ready       # {"status":"ready","checks":{"database":"up"}}
-                                              # 503 {"status":"unavailable",...} if PostgreSQL is down
+curl http://localhost:3000/health/ready       # {"status":"ready","checks":{"database":"up","redis":"up"}}
+                                              # 200 "degraded" if only Redis is down (rate limiting fails open)
+                                              # 503 "unavailable" if PostgreSQL is down
 ```
 
 Press Ctrl+C to stop gracefully: in-flight requests finish before the process exits.

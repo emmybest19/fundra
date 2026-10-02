@@ -6,12 +6,25 @@ export interface HealthCheck {
   name: string;
   /** Resolves if the dependency is usable; rejects otherwise. */
   check: () => Promise<void>;
+  /**
+   * Whether the instance should stop receiving traffic while this dependency is down
+   * (default true). Use false for shared dependencies the app can degrade without: since
+   * every instance shares them, failing readiness would pull all instances at once and
+   * turn a partial outage into a full one.
+   */
+  critical?: boolean;
 }
 
 export type CheckStatus = 'up' | 'down';
 
+/**
+ * - `ready` (200): every check is up.
+ * - `degraded` (200): only non-critical checks are down; keep serving.
+ * - `unavailable` (503): a critical check is down.
+ * - `draining` (503): shutting down.
+ */
 export interface ReadinessReport {
-  status: 'ready' | 'unavailable' | 'draining';
+  status: 'ready' | 'degraded' | 'unavailable' | 'draining';
   checks: Record<string, CheckStatus>;
 }
 
@@ -49,20 +62,23 @@ export class HealthService {
   /** Runs every check in parallel. Failure reasons are logged, never returned to the caller. */
   async readiness(): Promise<ReadinessReport> {
     const results = await Promise.all(
-      this.#checks.map(async ({ name, check }): Promise<[string, CheckStatus]> => {
+      this.#checks.map(async ({ name, check, critical = true }) => {
         try {
           await withTimeout(check(), this.#timeoutMs);
-          return [name, 'up'];
+          return { name, critical, status: 'up' as const };
         } catch (err) {
-          logger.warn({ err, check: name }, 'readiness check failed');
-          return [name, 'down'];
+          logger.warn({ err, check: name, critical }, 'readiness check failed');
+          return { name, critical, status: 'down' as const };
         }
       }),
     );
 
-    const checks = Object.fromEntries(results);
+    const checks = Object.fromEntries(results.map(({ name, status }) => [name, status]));
     if (this.#draining) return { status: 'draining', checks };
-    const allUp = results.every(([, status]) => status === 'up');
-    return { status: allUp ? 'ready' : 'unavailable', checks };
+
+    const down = results.filter((result) => result.status === 'down');
+    if (down.length === 0) return { status: 'ready', checks };
+    if (down.some((result) => result.critical)) return { status: 'unavailable', checks };
+    return { status: 'degraded', checks };
   }
 }

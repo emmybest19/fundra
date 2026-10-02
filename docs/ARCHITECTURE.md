@@ -455,12 +455,28 @@ Detailed controls will be documented in [security.md](security.md) as each modul
 **Observability and lifecycle (*Built*, except where noted):**
 - **Logs:** JSON lines carrying `requestId`; `userId` is added with auth in Stage 7.
 - **`GET /health/live`:** 200 `{ "status": "ok" }` while the process runs.
-- **`GET /health/ready`:** runs the registered dependency checks in parallel, each with a 2 s timeout. Returns 200 `ready`, or 503 `unavailable` / `draining`, with per-check `up`/`down` only; failure reasons go to the logs. Registered checks: **`database`** (`SELECT 1` through the shared Prisma pool). `redis` follows in Stage 6. The process starts even when a dependency is down and reports 503 until it recovers, so orchestrators hold traffic rather than crash-looping the app. Verified against a live PostgreSQL 18.3 that was down at startup, came up, died and recovered: 503 → 200 → 503 → 200 with no restart, and one `warn` log line per failed probe.
+- **`GET /health/ready`:** runs the registered dependency checks in parallel, each with a 2 s timeout. It reports per-check `up`/`down` only; failure reasons go to the logs.
+
+  | Status | HTTP | When |
+  |---|---|---|
+  | `ready` | 200 | Every check is up |
+  | `degraded` | 200 | Only **non-critical** checks are down; keep serving |
+  | `unavailable` | 503 | A **critical** check is down |
+  | `draining` | 503 | Shutting down |
+
+  | Check | Probe | Critical | Why |
+  |---|---|---|---|
+  | `database` | `SELECT 1` via the shared Prisma pool | yes | Nothing works without it |
+  | `redis` | `PING` | **no** | Every instance shares one Redis, so failing readiness on it would pull *all* instances at once and turn a Redis blip into a full outage. Rate limiting fails open, so the API degrades rather than breaks. **Revisit** when OTPs (Stage 7) and job queues (Stage 16) depend on Redis |
+
+  The process starts even when a dependency is down and reports it until it recovers, so orchestrators hold traffic rather than crash-looping the app. Verified live:
+  - PostgreSQL 18.3 down at startup, then up, died and recovered: 503 → 200 → 503 → 200 with no restart, one `warn` per failed probe.
+  - Database up with Redis unreachable: `200 degraded`. Both down: `503 unavailable`.
 - Health responses are infrastructure, not API: they aren't versioned, aren't wrapped in the envelope, are sent with `Cache-Control: no-store`, and aren't access-logged.
 - **Graceful shutdown** (`src/common/utils/shutdown.ts`) on SIGTERM/SIGINT:
   1. Readiness reports `draining`.
   2. The server stops accepting connections; in-flight requests finish.
-  3. Cleanup hooks run in order (queues, Redis, database as they are added); a failing hook doesn't stop the others.
+  3. Cleanup hooks run in order; a failing hook doesn't stop the others. Currently: **Redis** (`QUIT` when connected; a hard disconnect mid-outage, which also stops the reconnect loop that would otherwise keep the process alive), then the **database**. Queues are added first in Stage 16.
   4. The process exits 0.
   
   After 10 s the remaining connections are force-closed and the exit code is 1. A hung cleanup triggers a hard exit 5 s later. A second signal exits immediately. Uncaught exceptions and unhandled rejections are logged at `fatal` and go through the same path with exit code 1. If the port is taken at startup, it logs `fatal` and exits 1.
@@ -485,7 +501,7 @@ This reflects the repository as it stands, not the design.
 | Gap | Impact |
 |---|---|
 | A running server with health endpoints and no business modules yet; the module `.ts` files are placeholders | `/api/v1` returns 404 for every path until modules are mounted |
-| `/health/ready` checks the database but not Redis yet | It can report `ready` while Redis is down. The Redis check is the next item (Stage 6) |
+| Redis is a *non-critical* readiness check | Correct while only rate limiting uses Redis. Once OTPs (Stage 7) and queues (Stage 16) depend on it, a Redis outage will break those flows while readiness says `degraded`. The flag must be revisited then |
 | Rate limiting hasn't run against a real Redis server | The Lua script was verified on ioredis-mock's Lua engine; real Redis 8.8 waits for Docker and the Stage 6 integration tests |
 | ioredis 6 defaults to the RESP3 protocol | Fine for our commands on Redis 8. BullMQ's compatibility with ioredis 6 / RESP3 must be checked in Stage 16 |
 | Graceful shutdown → `disconnectDatabase()` hasn't been exercised end-to-end | Windows can't deliver SIGTERM to a Node process. The cleanup hook ordering is unit-tested; a real SIGTERM test runs once the app is in Docker (Stage 23) |

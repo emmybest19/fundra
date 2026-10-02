@@ -44,6 +44,18 @@ describe('createApp', () => {
     expect(res.body).toEqual({ status: 'unavailable', checks: { database: 'down' } });
   });
 
+  it('keeps serving (200 degraded) when only a non-critical dependency is down', async () => {
+    const health = new HealthService([
+      { name: 'database', check: () => Promise.resolve() },
+      { name: 'redis', check: () => Promise.reject(new Error('down')), critical: false },
+    ]);
+
+    const res = await request(appWith(health)).get('/health/ready');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ status: 'degraded', checks: { database: 'up', redis: 'down' } });
+  });
+
   it('serves readiness as 503 while draining', async () => {
     const health = new HealthService([]);
     health.startDraining();

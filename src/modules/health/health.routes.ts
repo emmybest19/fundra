@@ -17,7 +17,9 @@ export function createHealthRouter(health: HealthService): Router {
 
   router.get('/ready', async (_req, res) => {
     const report = await health.readiness();
-    res.status(report.status === 'ready' ? 200 : 503).json(report);
+    // `degraded` still takes traffic; only critical failures and draining return 503.
+    const serving = report.status === 'ready' || report.status === 'degraded';
+    res.status(serving ? 200 : 503).json(report);
   });
 
   return router;

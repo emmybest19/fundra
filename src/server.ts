@@ -5,13 +5,18 @@ import { registerShutdown } from './common/utils/shutdown.ts';
 import { checkDatabase, disconnectDatabase } from './config/database.ts';
 import { env } from './config/env.ts';
 import { logger } from './config/logger.ts';
-import { connectRedis, redis } from './config/redis.ts';
+import { checkRedis, connectRedis, disconnectRedis, redis } from './config/redis.ts';
 import { RedisRateLimitStore } from './middleware/rate-limit.middleware.ts';
 import { HealthService } from './modules/health/health.service.ts';
 
-// The process starts even if a dependency is down; readiness reports 503 until it recovers,
-// so orchestrators hold traffic instead of crash-looping the app. Redis is added in Stage 6.
-const health = new HealthService([{ name: 'database', check: () => checkDatabase() }]);
+// The process starts even if a dependency is down; readiness reports it until it recovers,
+// so orchestrators hold traffic instead of crash-looping the app.
+const health = new HealthService([
+  { name: 'database', check: () => checkDatabase() },
+  // Non-critical for now: rate limiting fails open, so Redis being down degrades the API
+  // rather than breaking it. Revisit when OTPs (Stage 7) and job queues (Stage 16) need it.
+  { name: 'redis', check: () => checkRedis(), critical: false },
+]);
 
 // Connects in the background; until Redis is reachable the rate limiter fails open.
 connectRedis();
@@ -34,5 +39,5 @@ registerShutdown({
     health.startDraining();
   },
   // Runs after HTTP has drained, so no in-flight request loses its connection mid-query.
-  cleanup: [() => disconnectDatabase()],
+  cleanup: [() => disconnectRedis(), () => disconnectDatabase()],
 });
