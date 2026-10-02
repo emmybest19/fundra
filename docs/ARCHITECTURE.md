@@ -167,6 +167,45 @@ Middleware order in `app.ts`:
 
 Implementation: [src/middleware/](../src/middleware/).
 
+### Idempotency (*Built*)
+
+Money-moving handlers run through `IdempotencyService.run(request, work)` ([src/common/idempotency](../src/common/idempotency/)). The client-facing contract is in [api.md](api.md#idempotency).
+
+**Invariant:** the idempotency row is marked `COMPLETED` *in the same database transaction* as the money movement. So "money moved" and "key completed" can never disagree, and an `IN_PROGRESS` row always means nothing has committed.
+
+```mermaid
+sequenceDiagram
+    participant R as Request
+    participant S as IdempotencyService
+    participant DB as PostgreSQL
+
+    R->>S: run({userId, key, fingerprint}, work)
+    S->>DB: INSERT idempotency_keys (IN_PROGRESS, claimed_at)
+    alt unique violation: key exists
+        S->>DB: SELECT existing
+        Note over S: expired → delete, claim again<br/>other fingerprint → 422 REUSED<br/>COMPLETED → replay stored response<br/>IN_PROGRESS < 60 s → 409<br/>IN_PROGRESS ≥ 60 s → CAS takeover (new claimed_at)
+    end
+    S->>DB: BEGIN
+    S->>DB: SELECT … FOR UPDATE (fencing: still IN_PROGRESS and our claimed_at?)
+    S->>DB: work(tx) — money movement, audit, outbox
+    S->>DB: UPDATE → COMPLETED + response
+    S->>DB: COMMIT
+    alt work or COMMIT failed
+        S->>DB: DELETE our claim only (CAS on claimed_at) → retry allowed
+    end
+```
+
+| Failure | Why it's safe |
+|---|---|
+| Client retries after a timeout | The key is `COMPLETED`, so the stored response is replayed and the work doesn't run |
+| Work throws, or COMMIT fails (e.g. unbalanced ledger) | Nothing committed; the claim is released, so a retry runs |
+| Process crashes mid-request | Its claim stays `IN_PROGRESS` with no money moved; after the 60 s lease, a retry takes over |
+| A slow original wakes up after a takeover | The fencing check at the start of its transaction sees a different `claimed_at` and aborts before touching money. If the original already holds the row lock, the takeover waits for its COMMIT and then replays |
+| COMMIT succeeds but the acknowledgement is lost | The row is `COMPLETED`, so the cleanup's compare-and-swap doesn't delete it; a retry replays |
+| Response body contains a `bigint` | The JSON round-trip fails before COMMIT, so no money moves without a replayable response |
+
+**Verified (2026-10-02)** through the real Prisma client on PostgreSQL 18.3 (pglite-socket), 20 of 21 scenarios: first run and replay, reused key (422), work failure releases the key, COMMIT failure (unbalanced ledger) persists nothing, stale takeover, **fencing** (a gated "slow original" was rejected and the takeover executed exactly once), expiry, and a bigint response failing before COMMIT. **Not verifiable on PGlite:** true concurrency. PGlite is single-connection; its socket multiplexer dropped 10 of 20 simultaneous connections. Even then, exactly one execution happened. Real concurrent transactions and row-lock waits are tested in the Stage 6 Testcontainers suite. The optional Redis "in-progress lock" from §9.3 isn't needed: the unique row claim is the lock.
+
 ### Validation (*Built*)
 
 Handlers are wrapped in `validated(schemas, handler)`, so they only run with valid input:

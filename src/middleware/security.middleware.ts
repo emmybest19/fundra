@@ -27,6 +27,7 @@ export function createCorsPolicy(allowedOrigins: readonly string[]) {
       'RateLimit-Remaining',
       'RateLimit-Reset',
       'Retry-After',
+      'Idempotent-Replayed',
     ],
     maxAge: 600,
   });

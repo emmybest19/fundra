@@ -462,7 +462,9 @@ model Transaction {
   @@unique([id, currency])
   @@index([sourceWalletId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([destinationWalletId, createdAt(sort: Desc), id(sort: Desc)])
-  @@index([status, createdAt], map: "transactions_in_flight_idx", where: raw("status IN ('PENDING', 'PROCESSING')"))
+  // Written exactly as PostgreSQL stores it (it rewrites `IN (...)` to `= ANY (ARRAY[...])`);
+  // otherwise Prisma sees a difference and drops/recreates the index in every migration.
+  @@index([status, createdAt], map: "transactions_in_flight_idx", where: raw("status = ANY (ARRAY['PENDING'::transaction_status, 'PROCESSING'::transaction_status])"))
   @@map("transactions")
 }
 
@@ -606,6 +608,9 @@ model IdempotencyKey {
   responseStatus Int?              @map("response_status")
   responseBody   Json?             @map("response_body")
   transactionId  String?           @map("transaction_id") @db.Uuid
+  /// When the current owner claimed the key. Fencing token: a request that has been taken
+  /// over after a stale claim sees a different value and aborts before moving money.
+  claimedAt      DateTime          @default(now()) @map("claimed_at") @db.Timestamptz(3)
   createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
   expiresAt      DateTime          @map("expires_at") @db.Timestamptz(3)
 

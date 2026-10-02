@@ -61,7 +61,10 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 403 | `FORBIDDEN` | Authenticated but not allowed |
 | 404 | `NOT_FOUND` | Resource doesn't exist or isn't visible to the caller |
 | 409 | `CONFLICT` | Conflicts with current state (duplicate, wrong status) |
+| 400 | `IDEMPOTENCY_KEY_REQUIRED` / `IDEMPOTENCY_KEY_INVALID` | `Idempotency-Key` header missing or malformed (see [Idempotency](#idempotency)) |
+| 409 | `IDEMPOTENCY_REQUEST_IN_PROGRESS` | A request with the same key is still being processed |
 | 413 | `PAYLOAD_TOO_LARGE` | Request body exceeds the size limit |
+| 422 | `IDEMPOTENCY_KEY_REUSED` | Key already used for a different request |
 | 422 | `VALIDATION_ERROR` | Well-formed request with invalid fields; see `details` |
 | 422 | `UNPROCESSABLE` | Valid request that breaks a business rule. Modules use more specific codes (e.g. `INSUFFICIENT_FUNDS`) as they are added |
 | 429 | `RATE_LIMITED` | Too many requests |
@@ -69,6 +72,30 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 503 | `SERVICE_UNAVAILABLE` | A dependency (database, Redis) is unavailable |
 
 Module-specific codes are registered in [error-codes.ts](../src/common/errors/error-codes.ts) and listed here as each module is built.
+
+---
+
+## Idempotency
+
+Every money-moving `POST` (transfers, deposits, withdrawals, payments) **requires** an `Idempotency-Key` header. Generate a new UUID per *intended* operation and reuse it only to retry that same operation.
+
+```http
+POST /api/v1/transfers
+Idempotency-Key: 3f6c2b1e-9a7d-4c1e-8f2a-5b6c7d8e9f00
+```
+
+| Situation | Response |
+|---|---|
+| First request with this key | Executes normally |
+| Retry after the first one completed (any time within 24 h) | The **original status and body are replayed** with header `Idempotent-Replayed: true`. Nothing executes again. The replayed JSON has the same values; key order may differ |
+| Retry while the first is still running | `409 IDEMPOTENCY_REQUEST_IN_PROGRESS`. Retry shortly |
+| Same key, different body, amount, recipient or endpoint | `422 IDEMPOTENCY_KEY_REUSED`. Use a new key |
+| The first request failed (error response) | Nothing was executed; retrying with the same key runs it again |
+| Header missing | `400 IDEMPOTENCY_KEY_REQUIRED` |
+| Header malformed (must be 8–255 visible ASCII characters) | `400 IDEMPOTENCY_KEY_INVALID` |
+| Key older than 24 h | Treated as new |
+
+Keys are scoped per user, so two users can never collide. Body key order doesn't matter: `{"a":1,"b":2}` and `{"b":2,"a":1}` are the same request.
 
 ---
 

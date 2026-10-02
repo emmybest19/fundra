@@ -46,11 +46,13 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Register the `redis` readiness check + close Redis on shutdown (non-critical → `degraded`; verified live)
 - [x] Validation middleware (Zod): typed `validated()` wrapper + shared validators (amount, currency, uuid, pagination)
 - [x] Audit service (transactional, sanitized metadata; append-only errors now `FN001`, verified via Prisma)
-- [ ] Idempotency service
+- [x] Idempotency service (claim → fenced transaction → complete; 20/21 scenarios on PostgreSQL 18.3; schema drift check now clean)
 - [ ] Outbox writer
 - [ ] Testcontainers harness for integration tests
 - [ ] Port the 49 migration checks from Stage 5 (30 constraints + 19 triggers) into integration tests
 - [ ] Integration test for the rate-limit Lua script on real Redis 8.8 (counting, expiry, TTL repair, concurrency)
+- [ ] Integration tests for idempotency on real PostgreSQL: all 10 scenarios, plus true concurrency (N parallel requests → one execution) and row-lock waits during takeover
+- [ ] CI check: `prisma migrate diff` between migrations and schema must be empty (no drift)
 
 ### Stage 7 — Auth
 - [ ] Register, login, logout (Argon2id)

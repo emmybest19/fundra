@@ -2,7 +2,9 @@
 
 > The PostgreSQL schema: every table, column, key, index and constraint, and why it exists. Written for developers implementing the Prisma schema and migrations (Stage 5) and for reviewers checking the financial model. The ledger concepts behind it are in [ARCHITECTURE.md §7](ARCHITECTURE.md#7-financial-core--designed).
 
-**Status: Implemented as schema + migration (2026-10-01).** All 26 tables are in [prisma/schema.prisma](../prisma/schema.prisma) and the first migration (`prisma/migrations/*_init`). The ledger integrity triggers are in a second migration (`*_ledger_integrity_triggers`), and a third (`*_append_only_error_code`) gives append-only violations their own SQLSTATE. All three were verified on PostgreSQL 18.3 (PGlite, in-process), not yet on the Docker database.
+**Status: Implemented as schema + migration (2026-10-01).** All 26 tables are in [prisma/schema.prisma](../prisma/schema.prisma) and the first migration (`prisma/migrations/*_init`). The ledger integrity triggers are in a second migration (`*_ledger_integrity_triggers`), a third (`*_append_only_error_code`) gives append-only violations their own SQLSTATE, and a fourth (`*_idempotency_claimed_at`) adds the idempotency fencing column. All four were verified on PostgreSQL 18.3 (PGlite), not yet on the Docker database.
+
+**Schema ↔ migrations drift check (2026-10-02): zero drift.** `prisma migrate diff --from-config-datasource --to-schema` against a database with all migrations applied reports an empty migration. The first run of this check found that PostgreSQL stores the partial-index predicate `status IN (...)` as `status = ANY (ARRAY[...])`, which made Prisma want to drop and recreate `transactions_in_flight_idx` in **every** future migration. The schema now writes the predicate in PostgreSQL's stored form.
 
 ---
 
@@ -406,12 +408,13 @@ Unique `(provider_id, event_id)`: **the** deduplication guarantee. A replayed we
 | `request_hash` | char(64) | SHA-256 of method + path + canonical body; same key with a different hash → 422 |
 | `status` | `idempotency_status` | `IN_PROGRESS` · `COMPLETED` |
 | `response_status` | int null | |
-| `response_body` | jsonb null | Replayed verbatim on retry |
+| `response_body` | jsonb null | Replayed on retry (same values; `jsonb` may reorder object keys) |
 | `transaction_id` | uuid null, FK | |
+| `claimed_at` | timestamptz | When the current owner claimed the key. **Fencing token** for stale-claim takeover (migration `*_idempotency_claimed_at`) |
 | `created_at` | timestamptz | |
 | `expires_at` | timestamptz | 24 h; expired keys are purged |
 
-Unique `(user_id, key)`, written **in the same DB transaction** as the money movement ([ARCHITECTURE.md §9.3](ARCHITECTURE.md#93-postgresql-vs-redis)).
+Unique `(user_id, key)` is the claim lock. The row is marked `COMPLETED` **in the same DB transaction** as the money movement ([ARCHITECTURE.md §9.3](ARCHITECTURE.md#93-postgresql-vs-redis)); the full algorithm is in [ARCHITECTURE.md, Idempotency](ARCHITECTURE.md#idempotency-built).
 
 ### `outbox_events`
 
