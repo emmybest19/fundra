@@ -22,7 +22,10 @@ Base path: `/api/v1`. All bodies are JSON. Further conventions (pagination, idem
   "error": {
     "code": "VALIDATION_ERROR",
     "message": "The request contains invalid fields.",
-    "details": [{ "path": "amount", "message": "Invalid string: must match pattern /^[1-9][0-9]*$/" }],
+    "details": [
+      { "path": "body.amount", "message": "Must be a positive whole number of kobo as a string, e.g. \"1000000\" for ₦10,000.00" },
+      { "path": "query.limit", "message": "Too small: expected number to be >=1" }
+    ],
     "requestId": "8f0c..."
   }
 }
@@ -32,7 +35,17 @@ Base path: `/api/v1`. All bodies are JSON. Further conventions (pagination, idem
 |---|---|---|
 | `code` | always | Stable, machine-readable. **Branch on this, not on `message`.** |
 | `message` | always | Human-readable. For 5xx it is always the generic `An unexpected error occurred.` |
-| `details` | validation errors | One entry per problem. `path` is the dotted field path, omitted for request-level problems. Submitted values are never echoed back |
+| `details` | validation errors | One entry per problem, all locations reported together. `path` starts with where the problem is (`params`, `query` or `body`), then the dotted field path, e.g. `body.recipient.handle`. A bare `body` means the body itself is missing or not a JSON object. Submitted values are never echoed back |
+
+### Input rules
+
+| Rule | Behaviour |
+|---|---|
+| Unknown fields | Rejected (`422`), not silently ignored |
+| Amounts | Strings of kobo: `"1000000"` = ₦10,000.00. Positive, digits only, no leading zeros, at most 15 digits. JSON numbers are rejected because they can lose precision |
+| Currency | `NGN` (upper case) |
+| Repeated query parameters | `?limit=10&limit=100` is rejected rather than silently picking one |
+| Pagination | `limit` 1–100 (default 20), optional opaque `cursor` |
 | `requestId` | when available | Quote it when reporting a problem; it links to the server logs |
 
 Implementation: [src/common/errors/](../src/common/errors/) and [src/common/utils/response.ts](../src/common/utils/response.ts).

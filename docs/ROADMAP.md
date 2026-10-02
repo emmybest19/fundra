@@ -44,7 +44,7 @@ Legend: `[x]` done · `[ ]` to do
 ### Stage 6 — Shared infrastructure
 - [x] `config/redis.ts` + rate-limit middleware (global 300/min per IP; Lua verified on ioredis-mock, real Redis pending Docker)
 - [x] Register the `redis` readiness check + close Redis on shutdown (non-critical → `degraded`; verified live)
-- [ ] Validation middleware (Zod)
+- [x] Validation middleware (Zod): typed `validated()` wrapper + shared validators (amount, currency, uuid, pagination)
 - [ ] Audit service
 - [ ] Idempotency service
 - [ ] Outbox writer

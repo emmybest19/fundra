@@ -95,7 +95,7 @@ routes → middleware → controller → service → (repository) → Prisma →
 | Layer | Responsibility | Must not |
 |---|---|---|
 | `*.routes.ts` | Map method + path to a middleware chain and controller | Contain logic |
-| `*.schema.ts` | Zod schemas for body, query, params and responses | Touch the database |
+| `*.schema.ts` | Zod schemas for body, query, params and responses, built from `src/common/validators` (`amount`, `currency`, `uuid`, `pagination`) | Touch the database |
 | `*.controller.ts` | Read the validated input, call one service method, shape the response | Contain business rules or open DB transactions |
 | `*.service.ts` | Business rules, orchestration, transaction boundaries | Know about `req` / `res` |
 | `*.repository.ts` | Complex persistence only (raw SQL, row locks) | Contain business rules |
@@ -161,11 +161,26 @@ Middleware order in `app.ts`:
 | 5 | `rateLimit` (global `api` policy) | Built | 300 requests/min per client IP, *before* body parsing so rejected requests cost nothing to parse (details below) |
 | 6 | **webhooks router** | Stage 15 | Mounted **before** JSON parsing: signature checks need the raw bytes |
 | 7 | `jsonBody` | Built | `express.json` with a 100 kB limit; malformed JSON → 400, oversized → 413 |
-| 8 | `/api/v1` router | Per module | Per route: `authenticate → rateLimit(policy) → authorize(permission) → validate(schema) → controller` |
+| 8 | `/api/v1` router | Per module | Per route: `authenticate → rateLimit(policy) → authorize(permission) → validated(schemas, handler)` |
 | 9 | `notFoundHandler` | Built | Unmatched routes get the standard `NOT_FOUND` body |
 | 10 | `errorHandler` | Built | `normalizeError` → `errorBody`; for 5xx it hands the real error to the request logger (`res.err`), so each failure is logged once, with request context |
 
 Implementation: [src/middleware/](../src/middleware/).
+
+### Validation (*Built*)
+
+Handlers are wrapped in `validated(schemas, handler)`, so they only run with valid input:
+
+```ts
+router.post('/transfers', authenticate, validated(
+  { body: transferBody },                  // Zod schemas for params / query / body
+  async ({ body }, req, res) => { ... },   // body.amount is already a bigint
+));
+```
+
+- **A wrapper, not a middleware that rewrites `req`:** Express 5 makes `req.query` read-only, and values written back onto `req` would be untyped anyway. The wrapper passes parsed, transformed values to the handler, typed from the schemas. A type-level test confirms this, and unchecked locations are typed `undefined`.
+- **All problems in one response:** failures in `params`, `query` and `body` are collected into a single `422 VALIDATION_ERROR` with location-prefixed paths (`body.amount`), so clients fix everything in one round trip. Submitted values are never echoed back.
+- Shared building blocks live in [src/common/validators](../src/common/validators/index.ts). Object schemas use `z.strictObject`, so unknown fields are rejected. The full client-facing rules are in [api.md](api.md#input-rules).
 
 ### Rate limiting (*Built*)
 
@@ -425,7 +440,7 @@ Constraints already decided:
 | Passwords | Argon2id |
 | Tokens | Short-lived JWT access tokens (`jose`); hashed, rotating refresh tokens with family revocation |
 | Authorization | RBAC: routes require **permissions**, not role names; services verify resource ownership (prevents IDOR) |
-| Input | Zod on every endpoint; unknown fields rejected |
+| Input | Zod on every endpoint via `validated()` (*Built*); `z.strictObject` rejects unknown fields; repeated query parameters rejected; amounts must be kobo strings (no floats) |
 | Transport | Helmet, CORS allow-list, body size limits, explicit `trust proxy` |
 | Abuse | Redis rate limits (*Built*: global 300/min per IP, IPv6 grouped by /64); stricter per-route policies on login, OTP, password reset and money movement as those modules are built |
 | Webhooks | HMAC over the raw body, constant-time comparison, event-ID dedupe |
