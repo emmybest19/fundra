@@ -127,7 +127,15 @@ A script applied the migration and tried to break every rule. The first run repo
 
 *Principle:* a constraint test should assert *which* rule rejected the data. Otherwise a test can pass because a different rule happened to catch the problem, and the rule it claims to test may not work at all.
 
-### 5.7 Design challenges solved on paper
+### 5.7 An error that told the truth in SQL and lied through the ORM
+
+The append-only triggers originally raised PostgreSQL's `23001 restrict_violation`, and direct SQL tests showed exactly that. Testing the audit service *through Prisma* showed something else: blocked edits arrived as `P2003`, "Foreign key constraint violated". Prisma's `pg` adapter maps `23001` to its foreign-key error, because restrict violations usually come from foreign keys. The protection worked, but the error lied: a developer would have hunted a non-existent foreign-key problem, and the application couldn't tell a real foreign-key failure from tampering.
+
+The adapter's mapping table showed that unlisted codes pass through untouched. A new migration (not an edit to the applied one) switched the trigger to a Fundra-reserved SQLSTATE, `FN001`, which now surfaces with its real code and message, distinct from genuine `P2003`s.
+
+*Principle:* test errors through the same layers production code will see them through. A database-level test proved the trigger worked; only an ORM-level test showed what the application would actually be told.
+
+### 5.8 Design challenges solved on paper
 
 These are designed in [ARCHITECTURE.md](ARCHITECTURE.md) and will be proven by tests as they are built:
 

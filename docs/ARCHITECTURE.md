@@ -445,7 +445,8 @@ Constraints already decided:
 | Abuse | Redis rate limits (*Built*: global 300/min per IP, IPv6 grouped by /64); stricter per-route policies on login, OTP, password reset and money movement as those modules are built |
 | Webhooks | HMAC over the raw body, constant-time comparison, event-ID dedupe |
 | Data | BVN/NIN encrypted at the application level; KYC documents in private storage |
-| Logging | Pino redaction of passwords, tokens, OTPs, `authorization` headers and identity numbers |
+| Logging | Pino redaction of passwords, tokens, OTPs, `authorization` headers and identity numbers (one shared key list with the audit sanitizer) |
+| Audit trail (*Built*) | `recordAudit(tx, entry)` writes **in the caller's transaction**: an action and its audit row commit or roll back together, and a failed audit write fails the action. Actions are a typed `domain.event` catalogue; `USER`/`ADMIN` actors must carry a user ID and `SYSTEM` actors can't. Metadata is sanitized before storage (sensitive keys redacted case- and separator-insensitively at any depth; bigint to exact strings; circular, deep or >8 KB payloads capped), because audit rows are append-only by trigger and a leaked secret would be permanent. IP, user agent (≤512 chars) and request ID come from the request |
 | Errors | Generic client messages; details only in logs, correlated by request ID |
 
 Detailed controls will be documented in [security.md](security.md) as each module is built.

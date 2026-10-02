@@ -1,5 +1,6 @@
 // Pino logger with redaction of secrets (passwords, tokens, OTPs).
 import { pino, type DestinationStream, type Logger, type LoggerOptions } from 'pino';
+import { SENSITIVE_KEYS } from '../common/constants/sensitive-keys.ts';
 import { env, type LOG_LEVELS } from './env.ts';
 
 export type LogLevel = (typeof LOG_LEVELS)[number];
@@ -8,22 +9,6 @@ export interface LoggerConfig {
   level: LogLevel;
   pretty: boolean;
 }
-
-const SENSITIVE_KEYS = [
-  'password',
-  'currentPassword',
-  'newPassword',
-  'passwordHash',
-  'token',
-  'accessToken',
-  'refreshToken',
-  'secret',
-  'apiKey',
-  'otp',
-  'pin',
-  'bvn',
-  'nin',
-] as const;
 
 // Pino redacts exact paths, so cover each key at the top level and up to three levels deep
 // (e.g. `password`, `body.password`, `req.body.password`, `payload.user.otp`).

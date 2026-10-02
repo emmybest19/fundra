@@ -2,7 +2,7 @@
 
 > The PostgreSQL schema: every table, column, key, index and constraint, and why it exists. Written for developers implementing the Prisma schema and migrations (Stage 5) and for reviewers checking the financial model. The ledger concepts behind it are in [ARCHITECTURE.md §7](ARCHITECTURE.md#7-financial-core--designed).
 
-**Status: Implemented as schema + migration (2026-10-01).** All 26 tables are in [prisma/schema.prisma](../prisma/schema.prisma) and the first migration (`prisma/migrations/*_init`). The ledger integrity triggers are in a second migration (`*_ledger_integrity_triggers`). Both were verified on PostgreSQL 18.3 (PGlite, in-process), not yet on the Docker database.
+**Status: Implemented as schema + migration (2026-10-01).** All 26 tables are in [prisma/schema.prisma](../prisma/schema.prisma) and the first migration (`prisma/migrations/*_init`). The ledger integrity triggers are in a second migration (`*_ledger_integrity_triggers`), and a third (`*_append_only_error_code`) gives append-only violations their own SQLSTATE. All three were verified on PostgreSQL 18.3 (PGlite, in-process), not yet on the Docker database.
 
 ---
 
@@ -523,10 +523,17 @@ Where each rule lives:
   | Trigger | Fires | Effect |
   |---|---|---|
   | `ledger_entries_balanced` | `AFTER INSERT`, constraint trigger, `DEFERRABLE INITIALLY DEFERRED` | At COMMIT, recomputes Σ debits and Σ credits for each touched transaction. A mismatch raises `23514 check_violation` with constraint `ledger_entries_balanced`, and the whole commit rolls back |
-  | `ledger_entries_append_only`, `audit_logs_append_only` | `BEFORE UPDATE OR DELETE`, per row | Raise `23001 restrict_violation` |
+  | `ledger_entries_append_only`, `audit_logs_append_only` | `BEFORE UPDATE OR DELETE`, per row | Raise SQLSTATE **`FN001`** (Fundra-reserved), message `<table> is append-only: <op> is not allowed` |
   | `ledger_entries_no_truncate`, `audit_logs_no_truncate` | `BEFORE TRUNCATE`, per statement | Same; `TRUNCATE` skips row triggers, so it needs its own |
 
   Why deferred: entries are inserted one at a time, so mid-transaction the books are legitimately unbalanced. Checking at COMMIT allows that but never allows *committing* them. Application code must therefore never run `SET CONSTRAINTS ALL IMMEDIATE`. A balance failure surfaces when the transaction **commits**, so the ledger service must handle errors from the commit itself (Stage 11).
+
+  **Why `FN001` and not a standard code.** The triggers first raised `23001 restrict_violation`. Testing through Prisma showed its `pg` adapter maps `23001` to `P2003` "Foreign key constraint violated". The edit *was* blocked, but the error claimed a non-existent foreign-key problem and was indistinguishable from a real one. Codes outside the adapter's mapping table pass through with their original code and message, so append-only violations now use a Fundra-reserved class (migration `*_append_only_error_code`). Through Prisma they surface as `P2039` with `meta.driverAdapterError.cause.originalCode === 'FN001'`; a real foreign-key violation is still `P2003`. The balance check's standard `23514` isn't remapped by the adapter, so it is unchanged.
+
+  | SQLSTATE | Meaning | Raised by |
+  |---|---|---|
+  | `FN001` | Append-only table modified | `ledger_entries`, `audit_logs` triggers |
+  | `23514` (constraint `ledger_entries_balanced`) | Unbalanced ledger transaction at COMMIT | `ledger_entries_balanced` |
 
   Limits: triggers stop application bugs, not a database superuser, who can disable them. Running the app as a non-owner role without `TRUNCATE`/`ALTER` rights closes that gap (Stage 25).
 

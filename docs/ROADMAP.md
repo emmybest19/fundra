@@ -45,7 +45,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] `config/redis.ts` + rate-limit middleware (global 300/min per IP; Lua verified on ioredis-mock, real Redis pending Docker)
 - [x] Register the `redis` readiness check + close Redis on shutdown (non-critical → `degraded`; verified live)
 - [x] Validation middleware (Zod): typed `validated()` wrapper + shared validators (amount, currency, uuid, pagination)
-- [ ] Audit service
+- [x] Audit service (transactional, sanitized metadata; append-only errors now `FN001`, verified via Prisma)
 - [ ] Idempotency service
 - [ ] Outbox writer
 - [ ] Testcontainers harness for integration tests
@@ -74,6 +74,7 @@ Legend: `[x]` done · `[ ]` to do
 ### Stage 11 — Ledger
 - [ ] `ledger.post()`: invariants, ordered row locks, balance check, entries, cached balances
 - [ ] Make `ledger_accounts.code/type/currency` immutable once created (trigger; found while testing the seed)
+- [ ] Translate database errors at the service boundary: `FN001` (append-only), `23514` `ledger_entries_balanced`, unique and FK violations; read the real SQLSTATE from `meta.driverAdapterError.cause.originalCode`
 - [ ] Holds (place / settle / release)
 - [ ] **Concurrency test:** parallel debits never overdraw, ledger always balances
 
