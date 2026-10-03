@@ -137,7 +137,7 @@ One row per login on a device.
 | `last_used_at` | timestamptz | Updated on refresh |
 | `expires_at` | timestamptz | Absolute session lifetime |
 | `revoked_at` | timestamptz null | Logout, admin action or token reuse |
-| `revoke_reason` | text null | `LOGOUT` · `TOKEN_REUSE` · `PASSWORD_CHANGED` · `ADMIN` |
+| `revoke_reason` | text null | `LOGOUT` · `USER_REVOKED` (remote sign-out) · `TOKEN_REUSE` · `ACCOUNT_DISABLED` · `PASSWORD_CHANGED` · `ADMIN` |
 | `created_at` | timestamptz | |
 
 Index: `(user_id) WHERE revoked_at IS NULL`, to list a user's active sessions.

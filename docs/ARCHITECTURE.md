@@ -249,7 +249,10 @@ Implementation: [src/modules/auth](../src/modules/auth/) (`tokens.ts`, `auth.ser
 
 Verified over HTTP on PostgreSQL 18.3 (23/23 checks), including replay detection killing the whole token family, idempotent logout, and two simultaneous refreshes never both succeeding. True concurrency on real PostgreSQL waits for the Stage 6 integration suite.
 
-**Open for item 5 (authenticate middleware):** a revoked session's access token stays valid for up to 15 minutes unless the middleware also checks the session (and `password_changed_at`) on each request.
+| `authenticate` middleware (*Built*) | `Authorization: Bearer <jwt>` → verify the token, then **load the session on every request** (one primary-key query that also loads the user). Revoked or expired sessions, tokens issued before the last password change, and a session belonging to another user give `401 UNAUTHENTICATED`. Suspended users get `403`. An expired token gives `401 ACCESS_TOKEN_EXPIRED`, a distinct code so clients know to refresh. Every 401 carries `WWW-Authenticate: Bearer`. Sets `req.auth`; request log lines then carry `userId` |
+| Sessions & devices (*Built*) | `GET /auth/sessions`, `DELETE /auth/sessions/:id` (another user's ID → 404), `DELETE /auth/sessions` (all except the current one). Login flags `newDevice` in the `auth.login_succeeded` event when the `deviceId` hasn't been seen for that user |
+
+**Revocation is immediate.** Because `authenticate` checks the session per request, logout, remote sign-out and theft revocation stop the access token at once, instead of after up to 15 minutes. That costs one indexed lookup per request; a short Redis cache can be added if profiling ever shows a need. Verified over HTTP on PostgreSQL 18.3 (19/19), including a revoked device's token being rejected on its very next request.
 
 The original design notes follow.
 

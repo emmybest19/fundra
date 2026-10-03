@@ -57,9 +57,9 @@ Legend: `[x]` done · `[ ]` to do
 ### Stage 7 — Auth
 - [x] Register + Argon2id password hashing + credential-verification core (lockout, timing-safe, rehash); verified end-to-end on PostgreSQL 18.3
 - [x] Login, refresh, logout endpoints: access tokens + rotating refresh tokens with reuse detection (23/23 lifecycle checks over HTTP on PostgreSQL 18.3)
-- [ ] Sessions + devices
+- [x] Sessions + devices (list / revoke one / revoke others, new-device detection) + `authenticate` middleware (pulled forward from item 5; per-request session check makes revocation immediate)
 - [ ] Email/phone verification (OTP), password reset (OTPs live in Redis: revisit whether the `redis` readiness check becomes critical)
-- [ ] `authenticate` + `authorize(permission)` middleware (RBAC)
+- [ ] `authorize(permission)` middleware (RBAC) — `authenticate` already built in item 3
 
 ### Stage 8 — Users
 - [ ] Profile, contact info, preferences, status, deactivation

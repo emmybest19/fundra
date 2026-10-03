@@ -70,6 +70,7 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 403 | `ACCOUNT_DISABLED` | Account suspended or deactivated (only shown after a correct password) |
 | 409 | `HANDLE_TAKEN` | Handle already in use |
 | 409 | `ACCOUNT_EXISTS` | Email or phone already registered (deliberately doesn't say which) |
+| 401 | `ACCESS_TOKEN_EXPIRED` | Access token expired; refresh and retry (see [Authenticated requests](#authenticated-requests)) |
 | 401 | `INVALID_REFRESH_TOKEN` | Refresh token unknown, expired, or its session ended |
 | 401 | `REFRESH_TOKEN_REUSED` | An already-used refresh token was presented; the session was ended as a precaution |
 | 422 | `VALIDATION_ERROR` | Well-formed request with invalid fields; see `details` |
@@ -203,6 +204,52 @@ Ends the session that owns the refresh token. **Always `204 No Content`**, even 
 { "refreshToken": "fnd_rt_3q2-…" }
 ```
 
-The access token stays valid until it expires (at most 15 minutes), unless the authenticate middleware (Stage 7) also checks the session.
+The access token stops working immediately as well: every authenticated request checks that its session is still active.
+
+### Authenticated requests
+
+Send the access token on every protected endpoint:
+
+```http
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs…
+```
+
+| Response | Meaning | Client action |
+|---|---|---|
+| `401 ACCESS_TOKEN_EXPIRED` | The access token is older than 15 minutes | Call `/auth/refresh`, retry once |
+| `401 UNAUTHENTICATED` | Missing or invalid token, or the session ended (logout, remote sign-out, password change) | Sign in again |
+| `403 ACCOUNT_DISABLED` | The account is suspended or deactivated | Show a support message |
+
+Every 401 includes `WWW-Authenticate: Bearer realm="fundra"`.
+
+### Sessions (signed-in devices)
+
+All require authentication. A session is one sign-in on one device.
+
+#### `GET /api/v1/auth/sessions`
+
+**200 OK**: your active sessions, most recently used first.
+
+```json
+{
+  "data": [
+    {
+      "id": "01a0…", "current": true,
+      "deviceId": "laptop-1", "deviceName": "Work laptop",
+      "userAgent": "Mozilla/5.0 …", "ipAddress": "203.0.113.7",
+      "createdAt": "2026-10-03T09:00:00.000Z", "lastUsedAt": "2026-10-03T09:42:10.000Z",
+      "expiresAt": "2026-11-02T09:00:00.000Z"
+    }
+  ]
+}
+```
+
+#### `DELETE /api/v1/auth/sessions/:id`
+
+Signs that device out: its access and refresh tokens stop working immediately. **204**, or **404** if the session isn't yours or has already ended (other users' sessions are never revealed). Revoking your own current session is equivalent to logout.
+
+#### `DELETE /api/v1/auth/sessions`
+
+"Sign out everywhere else": ends every session except the current one. **200** `{ "data": { "revoked": 2 } }`.
 
 *More endpoints are added per module.*

@@ -52,6 +52,8 @@ export interface OutboxEventPayloads {
   'auth.login_succeeded': {
     userId: string;
     sessionId: string;
+    /** First sign-in from this deviceId (or no deviceId sent): drives "new device" alerts. */
+    newDevice: boolean;
   };
   'auth.password_changed': {
     userId: string;

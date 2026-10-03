@@ -1,5 +1,5 @@
 // Express router for auth.
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import {
   rateLimit,
   type RateLimitPolicy,
@@ -7,6 +7,7 @@ import {
 } from '../../middleware/rate-limit.middleware.ts';
 import { createAuthController } from './auth.controller.ts';
 import type { AuthService } from './auth.service.ts';
+import type { SessionService } from './session.service.ts';
 
 const MINUTE = 60 * 1_000;
 
@@ -36,17 +37,30 @@ export const REFRESH_RATE_LIMIT: RateLimitPolicy = {
 
 export interface AuthRouterDependencies {
   auth: AuthService;
+  sessions: SessionService;
+  authenticate: RequestHandler;
   rateLimitStore: RateLimitStore;
 }
 
-export function createAuthRouter({ auth, rateLimitStore }: AuthRouterDependencies): Router {
-  const controller = createAuthController(auth);
+export function createAuthRouter({
+  auth,
+  sessions,
+  authenticate,
+  rateLimitStore,
+}: AuthRouterDependencies): Router {
+  const controller = createAuthController(auth, sessions);
   const router = Router();
 
+  // Public
   router.post('/register', rateLimit(rateLimitStore, REGISTER_RATE_LIMIT), controller.register);
   router.post('/login', rateLimit(rateLimitStore, LOGIN_RATE_LIMIT), controller.login);
   router.post('/refresh', rateLimit(rateLimitStore, REFRESH_RATE_LIMIT), controller.refresh);
   router.post('/logout', rateLimit(rateLimitStore, REFRESH_RATE_LIMIT), controller.logout);
+
+  // Signed-in devices (authenticated)
+  router.get('/sessions', authenticate, controller.listSessions);
+  router.delete('/sessions', authenticate, controller.revokeOtherSessions);
+  router.delete('/sessions/:id', authenticate, controller.revokeSession);
 
   return router;
 }

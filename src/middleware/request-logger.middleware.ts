@@ -1,4 +1,5 @@
 // Logs one line per completed request and gives each request a child logger (req.log).
+import type { Request } from 'express';
 import type { Logger } from 'pino';
 import { pinoHttp } from 'pino-http';
 import { logger } from '../config/logger.ts';
@@ -24,6 +25,11 @@ export function createRequestLogger(baseLogger: Logger) {
       return 'info';
     },
     autoLogging: { ignore: (req) => req.url?.startsWith('/health') ?? false },
+    // Who made the request, once `authenticate` has run (evaluated when the request completes).
+    customProps: (req) => {
+      const auth = (req as Request).auth;
+      return auth === undefined ? {} : { userId: auth.userId };
+    },
     // Keep request lines small: no headers, bodies or query strings beyond the URL.
     serializers: {
       req: (req: SerializedRequest) => ({ id: req.id, method: req.method, url: req.url }),

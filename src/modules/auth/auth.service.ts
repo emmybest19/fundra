@@ -88,6 +88,11 @@ export class AuthService {
     const now = this.#now();
     const expiresAt = new Date(now + SESSION_TTL_MS);
     const refresh = generateRefreshToken();
+    // Device tracking: a device we haven't seen for this user (or an unidentified one) is new.
+    const newDevice =
+      input.deviceId === undefined ||
+      (await this.#db.session.count({ where: { userId: user.id, deviceId: input.deviceId } })) ===
+        0;
 
     const session = await this.#db.$transaction(async (tx) => {
       const created = await tx.session.create({
@@ -114,7 +119,7 @@ export class AuthService {
       await writeOutboxEvent(tx, {
         type: 'auth.login_succeeded',
         aggregate: { type: 'user', id: user.id },
-        payload: { userId: user.id, sessionId: created.id },
+        payload: { userId: user.id, sessionId: created.id, newDevice },
       });
       return created;
     });
