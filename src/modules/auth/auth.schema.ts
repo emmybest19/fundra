@@ -31,6 +31,21 @@ export const loginBody = z.strictObject({
 
 export type LoginInput = z.output<typeof loginBody>;
 
+export const otpCode = z.string().regex(/^\d{6}$/, 'Must be the 6-digit code');
+
+export const confirmCodeBody = z.strictObject({ code: otpCode });
+
+export const forgotPasswordBody = z.strictObject({
+  identifier: z.string().trim().min(1, 'Required').max(254),
+});
+
+/** The personal-data rule needs the account, so the service checks it after lookup. */
+export const resetPasswordBody = z.strictObject({
+  identifier: z.string().trim().min(1, 'Required').max(254),
+  code: otpCode,
+  newPassword: password,
+});
+
 /** For /refresh and /logout. */
 export const refreshTokenBody = z.strictObject({
   refreshToken: z.string().min(1, 'Required').max(200),

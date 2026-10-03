@@ -9,8 +9,7 @@ import { writeOutboxEvent } from '../../common/outbox/outbox.writer.ts';
 import type { PrismaClient, Session, User } from '../../generated/prisma/client.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import type { AuditContext } from '../audit/audit.types.ts';
-import { email, phone } from '../users/user.schema.ts';
-import { createUser } from '../users/user.service.ts';
+import { createUser, findUserByIdentifier, isDisabled } from '../users/user.service.ts';
 import type { LoginInput, RegisterInput } from './auth.schema.ts';
 import { hashPassword, needsRehash, verifyAgainstDummy, verifyPassword } from './password.ts';
 import {
@@ -51,8 +50,6 @@ const accountDisabled = () =>
   new ForbiddenError('This account is not active. Contact support.', {
     code: ErrorCode.ACCOUNT_DISABLED,
   });
-
-const isDisabled = (user: User) => user.status === 'SUSPENDED' || user.status === 'DEACTIVATED';
 
 /** Thrown inside a transaction to roll it back when a concurrent refresh used the token first. */
 class RefreshRaceLost extends Error {}
@@ -317,7 +314,7 @@ export class AuthService {
     password: string,
     context: AuditContext,
   ): Promise<User> {
-    const user = await this.#findByIdentifier(identifier);
+    const user = await findUserByIdentifier(this.#db, identifier);
     if (user === null) {
       await verifyAgainstDummy(password);
       throw invalidCredentials();
@@ -353,16 +350,6 @@ export class AuthService {
     if (needsRehash(user.passwordHash)) updates.passwordHash = await hashPassword(password);
     if (Object.keys(updates).length === 0) return user;
     return this.#db.user.update({ where: { id: user.id }, data: updates });
-  }
-
-  async #findByIdentifier(identifier: string): Promise<User | null> {
-    // Email if it looks like one, otherwise phone. Unparseable input simply finds nobody.
-    if (identifier.includes('@')) {
-      const parsed = email.safeParse(identifier);
-      return parsed.success ? this.#db.user.findUnique({ where: { email: parsed.data } }) : null;
-    }
-    const parsed = phone.safeParse(identifier);
-    return parsed.success ? this.#db.user.findUnique({ where: { phone: parsed.data } }) : null;
   }
 
   async #recordFailedAttempt(user: User, context: AuditContext): Promise<void> {

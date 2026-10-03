@@ -5,6 +5,7 @@ const valid = {
   DATABASE_URL: 'postgresql://fundra:s3cret-db-pass@localhost:5432/fundra',
   REDIS_URL: 'redis://:s3cret-redis-pass@localhost:6379',
   JWT_ACCESS_SECRET: 'a-test-secret-that-is-at-least-32-chars-long',
+  OTP_SECRET: 'another-test-secret-at-least-32-characters',
 };
 
 function issuesFor(source: Record<string, string | undefined>): readonly string[] {
@@ -29,6 +30,7 @@ describe('parseEnv', () => {
       CORS_ORIGINS: [],
       TRUST_PROXY_HOPS: 0,
       JWT_ACCESS_SECRET: valid.JWT_ACCESS_SECRET,
+      OTP_SECRET: valid.OTP_SECRET,
     });
   });
 
@@ -86,6 +88,7 @@ describe('parseEnv', () => {
     ['TRUST_PROXY_HOPS', '-1'],
     ['TRUST_PROXY_HOPS', 'true'],
     ['JWT_ACCESS_SECRET', 'too-short-secret'],
+    ['OTP_SECRET', 'too-short-secret'],
   ])('rejects invalid %s=%s', (name, value) => {
     const issues = issuesFor({ ...valid, [name]: value });
 

@@ -12,7 +12,10 @@ export const AUDIT_ACTIONS = [
   'auth.account_locked',
   'auth.logout',
   'auth.password_changed',
+  'auth.password_reset_requested',
   'auth.password_reset',
+  'user.email_verified',
+  'user.phone_verified',
   'auth.token_reuse_detected',
   'auth.session_revoked',
   // Users & access (Stages 8, 19)

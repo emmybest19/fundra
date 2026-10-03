@@ -6,7 +6,9 @@ import {
   MemoryRateLimitStore,
   type RateLimitStore,
 } from '../../src/middleware/rate-limit.middleware.ts';
+import { MemoryOtpStore } from '../../src/modules/auth/otp.ts';
 import { HealthService } from '../../src/modules/health/health.service.ts';
+import { MemoryMessageSender } from '../../src/modules/notifications/notification.service.ts';
 
 function appWith(
   health = new HealthService([]),
@@ -14,7 +16,13 @@ function appWith(
 ) {
   // Prisma connects lazily; these tests never reach a route that queries the database.
   const db = createPrismaClient({ connectionString: 'postgresql://u:p@127.0.0.1:1/unused' });
-  return createApp({ db, health, rateLimitStore });
+  return createApp({
+    db,
+    health,
+    rateLimitStore,
+    otpStore: new MemoryOtpStore(),
+    messageSender: new MemoryMessageSender(),
+  });
 }
 
 describe('createApp', () => {

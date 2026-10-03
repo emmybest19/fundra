@@ -7,7 +7,9 @@ import { env } from './config/env.ts';
 import { logger } from './config/logger.ts';
 import { checkRedis, connectRedis, disconnectRedis, redis } from './config/redis.ts';
 import { RedisRateLimitStore } from './middleware/rate-limit.middleware.ts';
+import { RedisOtpStore } from './modules/auth/otp.ts';
 import { HealthService } from './modules/health/health.service.ts';
+import { MemoryMessageSender } from './modules/notifications/notification.service.ts';
 
 // The process starts even if a dependency is down; readiness reports it until it recovers,
 // so orchestrators hold traffic instead of crash-looping the app.
@@ -22,13 +24,24 @@ const health = new HealthService([
 connectRedis();
 
 const server = createServer(
-  createApp({ db: prisma, health, rateLimitStore: new RedisRateLimitStore(redis) }),
+  createApp({
+    db: prisma,
+    health,
+    rateLimitStore: new RedisRateLimitStore(redis),
+    otpStore: new RedisOtpStore(redis),
+    // Stage 17 replaces this with real email/SMS delivery; until then codes are not delivered.
+    messageSender: new MemoryMessageSender(),
+  }),
 );
 
 server.on('error', (err) => {
   logger.fatal({ err }, 'HTTP server failed');
   process.exit(1);
 });
+
+logger.warn(
+  'Email/SMS delivery is not configured yet (Stage 17): verification and reset codes are not sent',
+);
 
 server.listen(env.PORT, () => {
   logger.info({ port: env.PORT, env: env.NODE_ENV }, 'Fundra API listening');

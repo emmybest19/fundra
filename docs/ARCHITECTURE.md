@@ -250,6 +250,9 @@ Implementation: [src/modules/auth](../src/modules/auth/) (`tokens.ts`, `auth.ser
 Verified over HTTP on PostgreSQL 18.3 (23/23 checks), including replay detection killing the whole token family, idempotent logout, and two simultaneous refreshes never both succeeding. True concurrency on real PostgreSQL waits for the Stage 6 integration suite.
 
 | `authenticate` middleware (*Built*) | `Authorization: Bearer <jwt>` → verify the token, then **load the session on every request** (one primary-key query that also loads the user). Revoked or expired sessions, tokens issued before the last password change, and a session belonging to another user give `401 UNAUTHENTICATED`. Suspended users get `403`. An expired token gives `401 ACCESS_TOKEN_EXPIRED`, a distinct code so clients know to refresh. Every 401 carries `WWW-Authenticate: Bearer`. Sets `req.auth`; request log lines then carry `userId` |
+| One-time codes (*Built*) | 6 digits (`crypto.randomInt`), stored in Redis **only as HMAC-SHA-256** keyed with `OTP_SECRET` and bound to purpose + user; 10-minute TTL; max 5 attempts, then the code is destroyed; single use; 60 s resend cooldown (`SET NX PX`). Check and count happen in **one Lua script**, so concurrent guesses can't share attempts (20 parallel wrong guesses → exactly 5 counted, on ioredis-mock's Lua engine). Codes reach users only via `MessageSender` (in memory until Stage 17) and are never logged or stored in the database: the outbox isn't used because its rows persist |
+| Verification (*Built*) | `/auth/verify/{email,phone}/{request,confirm}` (authenticated). When both are verified, `PENDING_VERIFICATION` → **`ACTIVE`** |
+| Password reset (*Built*) | `/auth/password/forgot` always 202 (unknown or disabled accounts are never revealed; the code goes to the channel named by the identifier). `/auth/password/reset`: the personal-data policy is checked *before* the code is consumed; on success, new Argon2id hash, `password_changed_at` = now, **every session revoked**, lockout cleared, audited, `auth.password_changed` outbox event, alert email. 5 per 15 min per IP |
 | Sessions & devices (*Built*) | `GET /auth/sessions`, `DELETE /auth/sessions/:id` (another user's ID → 404), `DELETE /auth/sessions` (all except the current one). Login flags `newDevice` in the `auth.login_succeeded` event when the `deviceId` hasn't been seen for that user |
 
 **Revocation is immediate.** Because `authenticate` checks the session per request, logout, remote sign-out and theft revocation stop the access token at once, instead of after up to 15 minutes. That costs one indexed lookup per request; a short Redis cache can be added if profiling ever shows a need. Verified over HTTP on PostgreSQL 18.3 (19/19), including a revoked device's token being rejected on its very next request.
@@ -554,7 +557,7 @@ Detailed controls will be documented in [security.md](security.md) as each modul
   | Check | Probe | Critical | Why |
   |---|---|---|---|
   | `database` | `SELECT 1` via the shared Prisma pool | yes | Nothing works without it |
-  | `redis` | `PING` | **no** | Every instance shares one Redis, so failing readiness on it would pull *all* instances at once and turn a Redis blip into a full outage. Rate limiting fails open, so the API degrades rather than breaks. **Revisit** when OTPs (Stage 7) and job queues (Stage 16) depend on Redis |
+  | `redis` | `PING` | **no** | Every instance shares one Redis, so failing readiness on it would pull *all* instances at once and turn a Redis blip into a full outage. Rate limiting fails open, so the API degrades rather than breaks. **Revisited in Stage 7 (OTPs): still non-critical.** A Redis outage breaks verification and password reset, which fail closed with a clear 503, while sign-in and (later) money movement keep working; pulling every instance would break those too. Revisit again for job queues (Stage 16) |
 
   The process starts even when a dependency is down and reports it until it recovers, so orchestrators hold traffic rather than crash-looping the app. Verified live:
   - PostgreSQL 18.3 down at startup, then up, died and recovered: 503 → 200 → 503 → 200 with no restart, one `warn` per failed probe.
@@ -588,7 +591,8 @@ This reflects the repository as it stands, not the design.
 | Gap | Impact |
 |---|---|
 | A running server with health endpoints and no business modules yet; the module `.ts` files are placeholders | `/api/v1` returns 404 for every path until modules are mounted |
-| Redis is a *non-critical* readiness check | Correct while only rate limiting uses Redis. Once OTPs (Stage 7) and queues (Stage 16) depend on it, a Redis outage will break those flows while readiness says `degraded`. The flag must be revisited then |
+| Redis is a *non-critical* readiness check | Deliberate (re-decided in Stage 7): during a Redis outage, readiness says `degraded` while OTP flows return 503. Revisit for job queues (Stage 16) |
+| Verification and reset codes aren't delivered yet | `MemoryMessageSender` holds them in memory until Stage 17 adds real email/SMS; the server logs a warning at startup. Tests read codes from the memory sender |
 | Rate limiting hasn't run against a real Redis server | The Lua script was verified on ioredis-mock's Lua engine; real Redis 8.8 waits for Docker and the Stage 6 integration tests |
 | ioredis 6 defaults to the RESP3 protocol | Fine for our commands on Redis 8. BullMQ's compatibility with ioredis 6 / RESP3 must be checked in Stage 16 |
 | Graceful shutdown → `disconnectDatabase()` hasn't been exercised end-to-end | Windows can't deliver SIGTERM to a Node process. The cleanup hook ordering is unit-tested; a real SIGTERM test runs once the app is in Docker (Stage 23) |

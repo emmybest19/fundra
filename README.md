@@ -110,7 +110,7 @@ docs/              project definition, architecture, case study, API, security
 | Database design, Prisma, schema + first migration | Done ([DATABASE.md](docs/DATABASE.md)); not yet applied to the Docker database |
 | Ledger integrity triggers | Done (verified on PostgreSQL 18.3 via PGlite) |
 | Seed data (roles, permissions, limits, fees, system accounts) | Done |
-| Auth: register, login, refresh (rotating, reuse detection), logout, sessions/devices, `authenticate` | Done; email/phone verification and permissions (RBAC) next |
+| Auth: register, login, refresh (rotating, reuse detection), logout, sessions/devices, `authenticate`, email/phone verification, password reset | Done; permissions (RBAC) next. Codes aren't delivered until Stage 17 |
 | Database readiness check + connection close on shutdown | Done (Stage 5 complete) |
 | Shared infrastructure: Redis, rate limiting, validation, audit, idempotency, outbox, Testcontainers | Next (Stage 6) |
 | Business modules, CI, deployment | Not started |
@@ -209,6 +209,7 @@ Configuration lives in a local `.env` file, which git ignores. `src/config/env.t
 | `CORS_ORIGINS` | no | *(empty: no browser origin allowed)* | Comma-separated exact origins, e.g. `https://app.fundra.dev,http://localhost:5173` |
 | `TRUST_PROXY_HOPS` | no | `0` | Number of reverse proxies in front of the app (0–10). Keep `0` unless behind a load balancer; otherwise clients could fake their IP with `X-Forwarded-For` |
 | `JWT_ACCESS_SECRET` | **yes** | — | Access-token signing key, ≥32 characters of random data. Generate one with `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`. Changing it signs everyone out of their current access tokens (refresh tokens keep working) |
+| `OTP_SECRET` | **yes** | — | HMAC key for one-time codes stored in Redis, ≥32 characters of random data (generate the same way). Must differ from `JWT_ACCESS_SECRET`. Changing it invalidates codes already sent |
 | `POSTGRES_USER` · `POSTGRES_PASSWORD` · `POSTGRES_DB` · `REDIS_PASSWORD` | for Docker | — | Read by `docker-compose.yml`, not the app |
 | `POSTGRES_PORT` · `REDIS_PORT` | no | `5432` · `6379` | Host ports used by `docker-compose.yml`. Set `POSTGRES_PORT=5433` if another PostgreSQL already uses 5432 (the case on the original dev machine) |
 

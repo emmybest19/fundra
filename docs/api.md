@@ -73,6 +73,9 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 401 | `ACCESS_TOKEN_EXPIRED` | Access token expired; refresh and retry (see [Authenticated requests](#authenticated-requests)) |
 | 401 | `INVALID_REFRESH_TOKEN` | Refresh token unknown, expired, or its session ended |
 | 401 | `REFRESH_TOKEN_REUSED` | An already-used refresh token was presented; the session was ended as a precaution |
+| 400 | `INVALID_OTP` | Code wrong, expired, already used, or out of attempts (5) |
+| 429 | `OTP_COOLDOWN` | A code was sent less than 60 seconds ago |
+| 409 | `ALREADY_VERIFIED` | That email or phone is already verified |
 | 422 | `VALIDATION_ERROR` | Well-formed request with invalid fields; see `details` |
 | 422 | `UNPROCESSABLE` | Valid request that breaks a business rule. Modules use more specific codes (e.g. `INSUFFICIENT_FUNDS`) as they are added |
 | 429 | `RATE_LIMITED` | Too many requests |
@@ -251,5 +254,36 @@ Signs that device out: its access and refresh tokens stop working immediately. *
 #### `DELETE /api/v1/auth/sessions`
 
 "Sign out everywhere else": ends every session except the current one. **200** `{ "data": { "revoked": 2 } }`.
+
+### Verification (one-time codes)
+
+Codes are 6 digits, valid for **10 minutes**, usable **once**, with **5 attempts** per code; a new code can be requested every **60 seconds**. Requesting a new code replaces the old one. Rate limit: 10 per 15 minutes per IP.
+
+| Endpoint | Auth | Body | Success |
+|---|---|---|---|
+| `POST /api/v1/auth/verify/email/request` | Bearer | — | **202** `{ "data": { "sent": true } }`; code emailed |
+| `POST /api/v1/auth/verify/email/confirm` | Bearer | `{ "code": "123456" }` | **200** `{ "data": { "user": { … } } }` |
+| `POST /api/v1/auth/verify/phone/request` | Bearer | — | **202**; code sent by SMS |
+| `POST /api/v1/auth/verify/phone/confirm` | Bearer | `{ "code": "123456" }` | **200** with the updated user |
+
+When **both** email and phone are verified, the account's `status` becomes `ACTIVE`. Errors: `400 INVALID_OTP`, `409 ALREADY_VERIFIED`, `429 OTP_COOLDOWN`, `503 SERVICE_UNAVAILABLE` (code storage unavailable: try later; codes are never skipped).
+
+### Password reset
+
+#### `POST /api/v1/auth/password/forgot`
+
+```json
+{ "identifier": "emma@fundra.dev" }
+```
+
+**Always 202** `{ "data": { "sent": true } }`, even if no such account exists, so the endpoint can't be used to discover accounts. If the account exists and is active, a code is sent to the channel you named: email for an email address, SMS for a phone number. Rate limit: 5 per 15 minutes per IP (shared with `/reset`).
+
+#### `POST /api/v1/auth/password/reset`
+
+```json
+{ "identifier": "emma@fundra.dev", "code": "123456", "newPassword": "brand new secret 9" }
+```
+
+**204**. The new password follows the registration rules. On success **every session is signed out** (all devices must sign in again), any sign-in lockout is cleared, and a "password changed" alert is emailed. Errors: `400 INVALID_OTP` (also for unknown or disabled accounts), `422` (password rules; the code is *not* used up), `429`, `503`.
 
 *More endpoints are added per module.*

@@ -40,6 +40,8 @@ const envSchema = z.object({
   // HS256 signing key for access tokens. At least 32 characters of random data
   // (e.g. `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`).
   JWT_ACCESS_SECRET: z.string().min(32, 'Must be at least 32 characters of random data'),
+  // HMAC key for one-time codes stored in Redis; a separate key from JWT_ACCESS_SECRET.
+  OTP_SECRET: z.string().min(32, 'Must be at least 32 characters of random data'),
 });
 
 export type Env = Readonly<z.infer<typeof envSchema>>;

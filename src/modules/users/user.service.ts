@@ -1,5 +1,26 @@
 // Business logic for users.
-import type { Prisma, User } from '../../generated/prisma/client.ts';
+import type { Prisma, PrismaClient, User } from '../../generated/prisma/client.ts';
+import { email, phone } from './user.schema.ts';
+
+/**
+ * Finds a user by email (if the identifier contains @) or phone, in any accepted format.
+ * Unparseable input finds nobody rather than erroring, so callers can't distinguish
+ * "malformed" from "unknown" for an attacker.
+ */
+export async function findUserByIdentifier(
+  db: Pick<PrismaClient, 'user'>,
+  identifier: string,
+): Promise<User | null> {
+  if (identifier.includes('@')) {
+    const parsed = email.safeParse(identifier);
+    return parsed.success ? db.user.findUnique({ where: { email: parsed.data } }) : null;
+  }
+  const parsed = phone.safeParse(identifier);
+  return parsed.success ? db.user.findUnique({ where: { phone: parsed.data } }) : null;
+}
+
+export const isDisabled = (user: Pick<User, 'status'>): boolean =>
+  user.status === 'SUSPENDED' || user.status === 'DEACTIVATED';
 
 export interface NewUser {
   email: string;

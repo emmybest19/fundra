@@ -58,11 +58,12 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Register + Argon2id password hashing + credential-verification core (lockout, timing-safe, rehash); verified end-to-end on PostgreSQL 18.3
 - [x] Login, refresh, logout endpoints: access tokens + rotating refresh tokens with reuse detection (23/23 lifecycle checks over HTTP on PostgreSQL 18.3)
 - [x] Sessions + devices (list / revoke one / revoke others, new-device detection) + `authenticate` middleware (pulled forward from item 5; per-request session check makes revocation immediate)
-- [ ] Email/phone verification (OTP), password reset (OTPs live in Redis: revisit whether the `redis` readiness check becomes critical)
+- [x] Email/phone verification (OTP → `ACTIVE`), password reset (signs out everywhere, clears lockout); `redis` readiness kept non-critical, OTP store fails closed (503). 26/26 behaviours on PostgreSQL 18.3; Lua verified on ioredis-mock
 - [ ] `authorize(permission)` middleware (RBAC) — `authenticate` already built in item 3
 
 ### Stage 8 — Users
 - [ ] Profile, contact info, preferences, status, deactivation
+- [ ] Change password while signed in (current + new; revoke other sessions, reissue tokens for this one)
 
 ### Stage 9 — KYC
 - [ ] `KycProvider` interface + `MockKycProvider`
