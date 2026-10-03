@@ -70,6 +70,8 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 403 | `ACCOUNT_DISABLED` | Account suspended or deactivated (only shown after a correct password) |
 | 409 | `HANDLE_TAKEN` | Handle already in use |
 | 409 | `ACCOUNT_EXISTS` | Email or phone already registered (deliberately doesn't say which) |
+| 401 | `INVALID_REFRESH_TOKEN` | Refresh token unknown, expired, or its session ended |
+| 401 | `REFRESH_TOKEN_REUSED` | An already-used refresh token was presented; the session was ended as a precaution |
 | 422 | `VALIDATION_ERROR` | Well-formed request with invalid fields; see `details` |
 | 422 | `UNPROCESSABLE` | Valid request that breaks a business rule. Modules use more specific codes (e.g. `INSUFFICIENT_FUNDS`) as they are added |
 | 429 | `RATE_LIMITED` | Too many requests |
@@ -146,6 +148,61 @@ Creates a customer account. Public. Rate limit: 10 per hour per IP, plus the glo
 }
 ```
 
-Errors: `422 VALIDATION_ERROR`, `409 HANDLE_TAKEN`, `409 ACCOUNT_EXISTS`, `429 RATE_LIMITED`. No tokens are issued here; sign in is the next item (login).
+Errors: `422 VALIDATION_ERROR`, `409 HANDLE_TAKEN`, `409 ACCOUNT_EXISTS`, `429 RATE_LIMITED`. No tokens are issued here; sign in with `/login`.
+
+#### `POST /api/v1/auth/login`
+
+Public. Rate limit: 20 per 15 minutes per IP; additionally 5 wrong passwords lock the account for 15 minutes.
+
+```json
+{ "identifier": "emma@fundra.dev", "password": "purple elephant 42", "deviceId": "a1b2c3", "deviceName": "Emma's Pixel" }
+```
+
+`identifier` is the email or the phone (any accepted format). `deviceId` (≤128) and `deviceName` (≤100) are optional and label the session.
+
+**200 OK** (`Cache-Control: no-store`)
+
+```json
+{
+  "data": {
+    "tokenType": "Bearer",
+    "accessToken": "eyJhbGciOiJIUzI1NiIs…",
+    "accessTokenExpiresAt": "2026-10-03T09:15:00.000Z",
+    "refreshToken": "fnd_rt_3q2-…",
+    "refreshTokenExpiresAt": "2026-11-02T09:00:00.000Z",
+    "user": { "id": "01a0…", "handle": "emma_o", "status": "PENDING_VERIFICATION", "…": "…" }
+  }
+}
+```
+
+Errors: `401 INVALID_CREDENTIALS` (unknown account *or* wrong password), `403 ACCOUNT_LOCKED`, `403 ACCOUNT_DISABLED`, `422`, `429`. Accounts still `PENDING_VERIFICATION` can sign in (to verify their email and phone).
+
+#### `POST /api/v1/auth/refresh`
+
+Exchanges a refresh token for a new access token **and a new refresh token**. The old refresh token stops working immediately. Rate limit: 60 per 15 minutes per IP.
+
+```json
+{ "refreshToken": "fnd_rt_3q2-…" }
+```
+
+**200 OK**: same token fields as login, without `user`. The session's expiry (`refreshTokenExpiresAt`) does not move.
+
+| Error | Meaning |
+|---|---|
+| `401 INVALID_REFRESH_TOKEN` | Unknown, expired, or its session was ended. Sign in again |
+| `401 REFRESH_TOKEN_REUSED` | This token was **already used**. Fundra treats that as theft and ends the session; sign in again |
+| `403 ACCOUNT_DISABLED` | The account was suspended; the session is ended |
+
+**Clients must not refresh in parallel.** Send one refresh at a time and store the new refresh token before using it. Two concurrent refreshes with the same token look exactly like a stolen token being replayed, and end the session.
+
+#### `POST /api/v1/auth/logout`
+
+Ends the session that owns the refresh token. **Always `204 No Content`**, even for unknown or already-ended sessions, so the endpoint can't be used to test tokens.
+
+```json
+{ "refreshToken": "fnd_rt_3q2-…" }
+```
+
+The access token stays valid until it expires (at most 15 minutes), unless the authenticate middleware (Stage 7) also checks the session.
 
 *More endpoints are added per module.*

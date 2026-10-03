@@ -9,6 +9,7 @@ export default defineConfig({
       NODE_ENV: 'test',
       DATABASE_URL: 'postgresql://fundra:test@localhost:5432/fundra_test',
       REDIS_URL: 'redis://localhost:6379',
+      JWT_ACCESS_SECRET: 'test-only-access-token-secret-not-for-production-use',
     },
     // Each test starts from a clean slate of mocks, spies and stubbed env vars.
     restoreMocks: true,

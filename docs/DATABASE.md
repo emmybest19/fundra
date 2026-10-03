@@ -144,7 +144,7 @@ Index: `(user_id) WHERE revoked_at IS NULL`, to list a user's active sessions.
 
 ### `refresh_tokens`
 
-A session's tokens form one **family**. Rotation creates a child; presenting an already-used token revokes the session ([ARCHITECTURE.md §6](ARCHITECTURE.md#6-authentication-lifecycle--designed)).
+A session's tokens form one **family**. Rotation creates a child; presenting an already-used token revokes the session ([ARCHITECTURE.md §6](ARCHITECTURE.md#6-authentication-lifecycle--built-login-refresh-logout)).
 
 | Column | Type | Notes |
 |---|---|---|

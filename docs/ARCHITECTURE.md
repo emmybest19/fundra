@@ -232,7 +232,26 @@ router.post('/transfers', authenticate, validated(
 
 ---
 
-## 6. Authentication lifecycle — *Designed*
+## 6. Authentication lifecycle — *Built (login, refresh, logout)*
+
+Implementation: [src/modules/auth](../src/modules/auth/) (`tokens.ts`, `auth.service.ts`). Endpoint contracts: [api.md](api.md#auth).
+
+| Element | As built |
+|---|---|
+| Access token | HS256 JWT (`jose`): `sub` user, `sid` session, `roles`, `iss`/`aud` = `fundra-api`, 15 min. Verification accepts **only** HS256 (rejects `alg: none` and algorithm swaps) and checks issuer, audience and expiry. Key: `JWT_ACCESS_SECRET` (≥32 chars) |
+| Refresh token | `fnd_rt_` + 256 random bits (the prefix helps secret scanners); only its SHA-256 is stored |
+| Session | One row per sign-in: device ID/name, user agent, IP; absolute expiry 30 days, which rotation never extends |
+| Rotation | Compare-and-swap (`used_at IS NULL`) consumes the token, issues its successor, and links them (`replaced_by_id`) in one transaction |
+| Reuse detection | Two independent layers. A token already marked used is rejected up front, and a concurrent use that slips past that loses the compare-and-swap. Either way: session revoked (`TOKEN_REUSE`), audited as `auth.token_reuse_detected`, `401 REFRESH_TOKEN_REUSED` |
+| Logout | Revokes the session (`LOGOUT`); always 204 |
+| Disabled users | A refresh by a suspended or deactivated user revokes the session and returns 403 |
+| Unverified users | `PENDING_VERIFICATION` may sign in, in order to verify; money endpoints will require `ACTIVE` |
+
+Verified over HTTP on PostgreSQL 18.3 (23/23 checks), including replay detection killing the whole token family, idempotent logout, and two simultaneous refreshes never both succeeding. True concurrency on real PostgreSQL waits for the Stage 6 integration suite.
+
+**Open for item 5 (authenticate middleware):** a revoked session's access token stays valid for up to 15 minutes unless the middleware also checks the session (and `password_changed_at`) on each request.
+
+The original design notes follow.
 
 Access tokens are short-lived JWTs (about 15 minutes) carrying only the user ID, session ID and roles. Refresh tokens are **opaque random values stored hashed**, grouped into one **family per session**, and **rotated on every use**.
 
@@ -487,7 +506,7 @@ Constraints already decided:
 | Passwords (*Built*) | Argon2id, m=19 MiB t=2 p=1 (OWASP), ~50 ms per hash on the development machine. Hashes self-describe their parameters and are upgraded transparently on the next login when parameters change. Policy: 10–128 chars, not containing the handle or email name, no composition rules (NIST SP 800-63B) |
 | Credential checks (*Built*) | One `INVALID_CREDENTIALS` for unknown account **and** wrong password; a dummy Argon2 verification equalises timing when the account doesn't exist (measured 122 ms vs 96 ms). 5 consecutive failures → 15-minute lock; while locked the password is **not checked at all**, so guessing during a lockout learns nothing. Suspended/deactivated is revealed only after a correct password. Failures and locks are audited |
 | Registration (*Built*) | User (`PENDING_VERIFICATION`), tier-0 KYC profile, `USER` role and audit row in one transaction. A taken handle is reported (`HANDLE_TAKEN`); a taken email or phone is `ACCOUNT_EXISTS` without naming the field. Contact details are normalised (lower-case email, Nigerian local phone → E.164) so case or format can't create duplicates. Rate limited to 10/hour per IP |
-| Tokens | Short-lived JWT access tokens (`jose`); hashed, rotating refresh tokens with family revocation |
+| Tokens (*Built*) | 15-minute HS256 JWT access tokens (`jose`, algorithm pinned); `fnd_rt_` opaque refresh tokens stored as SHA-256, rotated on every use, with reuse detection that revokes the whole session; token responses sent `Cache-Control: no-store` (see §6) |
 | Authorization | RBAC: routes require **permissions**, not role names; services verify resource ownership (prevents IDOR) |
 | Input | Zod on every endpoint via `validated()` (*Built*); `z.strictObject` rejects unknown fields; repeated query parameters rejected; amounts must be kobo strings (no floats) |
 | Transport | Helmet, CORS allow-list, body size limits, explicit `trust proxy` |

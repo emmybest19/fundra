@@ -37,6 +37,9 @@ const envSchema = z.object({
   CORS_ORIGINS: originList.default([]),
   // Number of reverse proxies in front of the app. 0 trusts none, so X-Forwarded-For can't spoof client IPs.
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
+  // HS256 signing key for access tokens. At least 32 characters of random data
+  // (e.g. `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`).
+  JWT_ACCESS_SECRET: z.string().min(32, 'Must be at least 32 characters of random data'),
 });
 
 export type Env = Readonly<z.infer<typeof envSchema>>;

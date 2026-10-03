@@ -4,6 +4,7 @@ import { env, EnvValidationError, parseEnv } from '../../../src/config/env.ts';
 const valid = {
   DATABASE_URL: 'postgresql://fundra:s3cret-db-pass@localhost:5432/fundra',
   REDIS_URL: 'redis://:s3cret-redis-pass@localhost:6379',
+  JWT_ACCESS_SECRET: 'a-test-secret-that-is-at-least-32-chars-long',
 };
 
 function issuesFor(source: Record<string, string | undefined>): readonly string[] {
@@ -27,6 +28,7 @@ describe('parseEnv', () => {
       REDIS_URL: valid.REDIS_URL,
       CORS_ORIGINS: [],
       TRUST_PROXY_HOPS: 0,
+      JWT_ACCESS_SECRET: valid.JWT_ACCESS_SECRET,
     });
   });
 
@@ -83,6 +85,7 @@ describe('parseEnv', () => {
     ['LOG_LEVEL', 'verbose'],
     ['TRUST_PROXY_HOPS', '-1'],
     ['TRUST_PROXY_HOPS', 'true'],
+    ['JWT_ACCESS_SECRET', 'too-short-secret'],
   ])('rejects invalid %s=%s', (name, value) => {
     const issues = issuesFor({ ...valid, [name]: value });
 
