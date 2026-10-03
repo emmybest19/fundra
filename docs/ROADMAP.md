@@ -55,8 +55,8 @@ Legend: `[x]` done · `[ ]` to do
 - [ ] CI check: `prisma migrate diff` between migrations and schema must be empty (no drift)
 
 ### Stage 7 — Auth
-- [ ] Register, login, logout (Argon2id)
-- [ ] Access tokens + rotating refresh tokens with reuse detection
+- [x] Register + Argon2id password hashing + credential-verification core (lockout, timing-safe, rehash); verified end-to-end on PostgreSQL 18.3
+- [ ] Login, refresh, logout endpoints: access tokens + rotating refresh tokens with reuse detection (uses the item 1 core)
 - [ ] Sessions + devices
 - [ ] Email/phone verification (OTP), password reset (OTPs live in Redis: revisit whether the `redis` readiness check becomes critical)
 - [ ] `authenticate` + `authorize(permission)` middleware (RBAC)

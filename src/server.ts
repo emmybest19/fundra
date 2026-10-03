@@ -2,7 +2,7 @@
 import { createServer } from 'node:http';
 import { createApp } from './app.ts';
 import { registerShutdown } from './common/utils/shutdown.ts';
-import { checkDatabase, disconnectDatabase } from './config/database.ts';
+import { checkDatabase, disconnectDatabase, prisma } from './config/database.ts';
 import { env } from './config/env.ts';
 import { logger } from './config/logger.ts';
 import { checkRedis, connectRedis, disconnectRedis, redis } from './config/redis.ts';
@@ -21,7 +21,9 @@ const health = new HealthService([
 // Connects in the background; until Redis is reachable the rate limiter fails open.
 connectRedis();
 
-const server = createServer(createApp({ health, rateLimitStore: new RedisRateLimitStore(redis) }));
+const server = createServer(
+  createApp({ db: prisma, health, rateLimitStore: new RedisRateLimitStore(redis) }),
+);
 
 server.on('error', (err) => {
   logger.fatal({ err }, 'HTTP server failed');

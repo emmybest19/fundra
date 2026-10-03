@@ -6,8 +6,10 @@
  */
 export const AUDIT_ACTIONS = [
   // Authentication & sessions (Stage 7)
+  'user.registered',
   'auth.login_succeeded',
   'auth.login_failed',
+  'auth.account_locked',
   'auth.logout',
   'auth.password_changed',
   'auth.password_reset',

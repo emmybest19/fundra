@@ -65,6 +65,11 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 409 | `IDEMPOTENCY_REQUEST_IN_PROGRESS` | A request with the same key is still being processed |
 | 413 | `PAYLOAD_TOO_LARGE` | Request body exceeds the size limit |
 | 422 | `IDEMPOTENCY_KEY_REUSED` | Key already used for a different request |
+| 401 | `INVALID_CREDENTIALS` | Email/phone or password incorrect (deliberately doesn't say which) |
+| 403 | `ACCOUNT_LOCKED` | Too many failed sign-ins; locked for 15 minutes |
+| 403 | `ACCOUNT_DISABLED` | Account suspended or deactivated (only shown after a correct password) |
+| 409 | `HANDLE_TAKEN` | Handle already in use |
+| 409 | `ACCOUNT_EXISTS` | Email or phone already registered (deliberately doesn't say which) |
 | 422 | `VALIDATION_ERROR` | Well-formed request with invalid fields; see `details` |
 | 422 | `UNPROCESSABLE` | Valid request that breaks a business rule. Modules use more specific codes (e.g. `INSUFFICIENT_FUNDS`) as they are added |
 | 429 | `RATE_LIMITED` | Too many requests |
@@ -101,4 +106,46 @@ Keys are scoped per user, so two users can never collide. Body key order doesn't
 
 ## Endpoints
 
-*Added per module.*
+### Auth
+
+#### `POST /api/v1/auth/register`
+
+Creates a customer account. Public. Rate limit: 10 per hour per IP, plus the global limit.
+
+```json
+{
+  "email": "emma@fundra.dev",
+  "phone": "08012345678",
+  "handle": "emma_o",
+  "firstName": "Emma",
+  "lastName": "Okafor",
+  "password": "purple elephant 42"
+}
+```
+
+| Field | Rules |
+|---|---|
+| `email` | Valid email, ≤254 chars; stored lower-case |
+| `phone` | E.164 (`+2348012345678`) or Nigerian local (`08012345678`); spaces, dashes and brackets ignored; stored as E.164 |
+| `handle` | 3–20 of `a-z 0-9 _`; a leading `@` is dropped; stored lower-case; public |
+| `firstName`, `lastName` | 1–100 chars, trimmed |
+| `password` | 10–128 chars; must not contain your handle or email name. No symbol/digit rules (NIST SP 800-63B) |
+
+**201 Created**
+
+```json
+{
+  "data": {
+    "user": {
+      "id": "01a0…", "email": "emma@fundra.dev", "emailVerified": false,
+      "phone": "+2348012345678", "phoneVerified": false, "handle": "emma_o",
+      "firstName": "Emma", "lastName": "Okafor", "status": "PENDING_VERIFICATION",
+      "createdAt": "2026-10-03T09:00:00.000Z"
+    }
+  }
+}
+```
+
+Errors: `422 VALIDATION_ERROR`, `409 HANDLE_TAKEN`, `409 ACCOUNT_EXISTS`, `429 RATE_LIMITED`. No tokens are issued here; sign in is the next item (login).
+
+*More endpoints are added per module.*

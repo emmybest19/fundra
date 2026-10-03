@@ -484,7 +484,9 @@ Constraints already decided:
 
 | Area | Control |
 |---|---|
-| Passwords | Argon2id |
+| Passwords (*Built*) | Argon2id, m=19 MiB t=2 p=1 (OWASP), ~50 ms per hash on the development machine. Hashes self-describe their parameters and are upgraded transparently on the next login when parameters change. Policy: 10–128 chars, not containing the handle or email name, no composition rules (NIST SP 800-63B) |
+| Credential checks (*Built*) | One `INVALID_CREDENTIALS` for unknown account **and** wrong password; a dummy Argon2 verification equalises timing when the account doesn't exist (measured 122 ms vs 96 ms). 5 consecutive failures → 15-minute lock; while locked the password is **not checked at all**, so guessing during a lockout learns nothing. Suspended/deactivated is revealed only after a correct password. Failures and locks are audited |
+| Registration (*Built*) | User (`PENDING_VERIFICATION`), tier-0 KYC profile, `USER` role and audit row in one transaction. A taken handle is reported (`HANDLE_TAKEN`); a taken email or phone is `ACCOUNT_EXISTS` without naming the field. Contact details are normalised (lower-case email, Nigerian local phone → E.164) so case or format can't create duplicates. Rate limited to 10/hour per IP |
 | Tokens | Short-lived JWT access tokens (`jose`); hashed, rotating refresh tokens with family revocation |
 | Authorization | RBAC: routes require **permissions**, not role names; services verify resource ownership (prevents IDOR) |
 | Input | Zod on every endpoint via `validated()` (*Built*); `z.strictObject` rejects unknown fields; repeated query parameters rejected; amounts must be kobo strings (no floats) |

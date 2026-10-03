@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.ts';
+import { createPrismaClient } from '../../src/config/database.ts';
 import {
   MemoryRateLimitStore,
   type RateLimitStore,
@@ -11,7 +12,9 @@ function appWith(
   health = new HealthService([]),
   rateLimitStore: RateLimitStore = new MemoryRateLimitStore(),
 ) {
-  return createApp({ health, rateLimitStore });
+  // Prisma connects lazily; these tests never reach a route that queries the database.
+  const db = createPrismaClient({ connectionString: 'postgresql://u:p@127.0.0.1:1/unused' });
+  return createApp({ db, health, rateLimitStore });
 }
 
 describe('createApp', () => {
