@@ -54,12 +54,12 @@ Legend: `[x]` done · `[ ]` to do
 - [ ] Integration tests for idempotency on real PostgreSQL: all 10 scenarios, plus true concurrency (N parallel requests → one execution) and row-lock waits during takeover
 - [ ] CI check: `prisma migrate diff` between migrations and schema must be empty (no drift)
 
-### Stage 7 — Auth
+### Stage 7 — Auth ✅
 - [x] Register + Argon2id password hashing + credential-verification core (lockout, timing-safe, rehash); verified end-to-end on PostgreSQL 18.3
 - [x] Login, refresh, logout endpoints: access tokens + rotating refresh tokens with reuse detection (23/23 lifecycle checks over HTTP on PostgreSQL 18.3)
 - [x] Sessions + devices (list / revoke one / revoke others, new-device detection) + `authenticate` middleware (pulled forward from item 5; per-request session check makes revocation immediate)
 - [x] Email/phone verification (OTP → `ACTIVE`), password reset (signs out everywhere, clears lockout); `redis` readiness kept non-critical, OTP store fails closed (503). 26/26 behaviours on PostgreSQL 18.3; Lua verified on ioredis-mock
-- [ ] `authorize(permission)` middleware (RBAC) — `authenticate` already built in item 3
+- [x] `authorize(permission)` middleware (RBAC) + `requireActiveAccount`; roles loaded from the database per request (grant/revoke immediate); verified on PostgreSQL 18.3
 
 ### Stage 8 — Users
 - [ ] Profile, contact info, preferences, status, deactivation

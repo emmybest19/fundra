@@ -4,6 +4,9 @@
 export const ROLES = ['SUPER_ADMIN', 'ADMIN', 'SUPPORT', 'COMPLIANCE', 'FINANCE', 'USER'] as const;
 export type RoleName = (typeof ROLES)[number];
 
+export const isRoleName = (value: string): value is RoleName =>
+  (ROLES as readonly string[]).includes(value);
+
 export const ROLE_DESCRIPTIONS: Readonly<Record<RoleName, string>> = {
   SUPER_ADMIN: 'Full access, including role assignment and system settings',
   ADMIN: 'Platform operations: users, wallets and monitoring',
@@ -72,3 +75,17 @@ export const ROLE_PERMISSIONS: Readonly<Record<RoleName, readonly Permission[]>>
   ],
   USER: [],
 };
+
+/** Every permission granted by any of the roles. */
+export function permissionsFor(roles: readonly RoleName[]): ReadonlySet<Permission> {
+  return new Set(roles.flatMap((role) => ROLE_PERMISSIONS[role]));
+}
+
+/** True only if the roles together grant every listed permission. */
+export function hasPermissions(
+  roles: readonly RoleName[],
+  required: readonly Permission[],
+): boolean {
+  const granted = permissionsFor(roles);
+  return required.every((permission) => granted.has(permission));
+}

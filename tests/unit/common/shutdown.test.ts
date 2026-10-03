@@ -64,9 +64,13 @@ describe('createShutdown', () => {
     await arrived;
     const done = shutdown('SIGTERM');
 
+    // New connections are refused from the moment shutdown starts. Asserted on the server
+    // rather than by connecting: on Windows a refused local connection takes ~2 s (SYN
+    // retries), which made a connect-based check flaky against the 5 s test timeout.
+    expect(server.listening).toBe(false);
+
     const res = await inFlight;
     expect(res.status).toBe(200);
-    await expect(fetch(`${url}/slow`)).rejects.toThrow();
 
     await done;
     expect(order).toEqual(['start', 'cleanup']);

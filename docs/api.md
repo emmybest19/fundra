@@ -68,6 +68,7 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 401 | `INVALID_CREDENTIALS` | Email/phone or password incorrect (deliberately doesn't say which) |
 | 403 | `ACCOUNT_LOCKED` | Too many failed sign-ins; locked for 15 minutes |
 | 403 | `ACCOUNT_DISABLED` | Account suspended or deactivated (only shown after a correct password) |
+| 403 | `ACCOUNT_NOT_ACTIVE` | Email and phone must be verified before this action (e.g. moving money) |
 | 409 | `HANDLE_TAKEN` | Handle already in use |
 | 409 | `ACCOUNT_EXISTS` | Email or phone already registered (deliberately doesn't say which) |
 | 401 | `ACCESS_TOKEN_EXPIRED` | Access token expired; refresh and retry (see [Authenticated requests](#authenticated-requests)) |
@@ -222,6 +223,8 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs…
 | `401 ACCESS_TOKEN_EXPIRED` | The access token is older than 15 minutes | Call `/auth/refresh`, retry once |
 | `401 UNAUTHENTICATED` | Missing or invalid token, or the session ended (logout, remote sign-out, password change) | Sign in again |
 | `403 ACCOUNT_DISABLED` | The account is suspended or deactivated | Show a support message |
+| `403 FORBIDDEN` | Signed in, but your roles don't grant this action | Don't retry |
+| `403 ACCOUNT_NOT_ACTIVE` | Email and phone not yet verified | Send the user through verification |
 
 Every 401 includes `WWW-Authenticate: Bearer realm="fundra"`.
 

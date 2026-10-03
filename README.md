@@ -110,7 +110,8 @@ docs/              project definition, architecture, case study, API, security
 | Database design, Prisma, schema + first migration | Done ([DATABASE.md](docs/DATABASE.md)); not yet applied to the Docker database |
 | Ledger integrity triggers | Done (verified on PostgreSQL 18.3 via PGlite) |
 | Seed data (roles, permissions, limits, fees, system accounts) | Done |
-| Auth: register, login, refresh (rotating, reuse detection), logout, sessions/devices, `authenticate`, email/phone verification, password reset | Done; permissions (RBAC) next. Codes aren't delivered until Stage 17 |
+| Auth (Stage 7): register, login, refresh (rotating, reuse detection), logout, sessions/devices, `authenticate`, email/phone verification, password reset, RBAC `authorize` | Done. Codes aren't delivered until Stage 17 |
+| Users (Stage 8) | Next |
 | Database readiness check + connection close on shutdown | Done (Stage 5 complete) |
 | Shared infrastructure: Redis, rate limiting, validation, audit, idempotency, outbox, Testcontainers | Next (Stage 6) |
 | Business modules, CI, deployment | Not started |

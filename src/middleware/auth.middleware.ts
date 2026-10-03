@@ -1,18 +1,26 @@
-// Verifies JWT access tokens and the session behind them.
+// Verifies JWT access tokens and the session behind them, and enforces permissions.
 import type { Request, RequestHandler } from 'express';
+import {
+  hasPermissions,
+  isRoleName,
+  type Permission,
+  type RoleName,
+} from '../common/constants/rbac.ts';
 import {
   ErrorCode,
   ForbiddenError,
   InternalError,
   UnauthorizedError,
 } from '../common/errors/index.ts';
-import type { PrismaClient } from '../generated/prisma/client.ts';
+import type { PrismaClient, User } from '../generated/prisma/client.ts';
 import { AccessTokenError, type TokenService } from '../modules/auth/tokens.ts';
 
 export interface AuthContext {
   userId: string;
   sessionId: string;
-  roles: readonly string[];
+  /** Loaded from the database on every request, so role changes apply immediately. */
+  roles: readonly RoleName[];
+  status: User['status'];
 }
 
 declare module 'express-serve-static-core' {
@@ -35,10 +43,10 @@ export interface AuthenticateDependencies {
 /**
  * Requires a valid access token **and** a live session behind it.
  *
- * The session is checked on every request (one primary-key lookup that also loads the user),
- * so logout, remote sign-out and theft revocation take effect immediately rather than when
- * the 15-minute access token expires. The same lookup rejects suspended users and tokens
- * issued before the user's last password change.
+ * The session is checked on every request (one primary-key lookup that also loads the user
+ * and their roles), so logout, remote sign-out, theft revocation and role changes take effect
+ * immediately rather than when the 15-minute access token expires. The same lookup rejects
+ * suspended users and tokens issued before the user's last password change.
  */
 export function createAuthenticate({ db, tokens }: AuthenticateDependencies): RequestHandler {
   return async (req, res, next) => {
@@ -69,7 +77,13 @@ export function createAuthenticate({ db, tokens }: AuthenticateDependencies): Re
         userId: true,
         revokedAt: true,
         expiresAt: true,
-        user: { select: { status: true, passwordChangedAt: true } },
+        user: {
+          select: {
+            status: true,
+            passwordChangedAt: true,
+            roles: { select: { role: { select: { name: true } } } },
+          },
+        },
       },
     });
     if (
@@ -93,7 +107,13 @@ export function createAuthenticate({ db, tokens }: AuthenticateDependencies): Re
     }
 
     res.removeHeader('WWW-Authenticate');
-    req.auth = { userId: claims.userId, sessionId: claims.sessionId, roles: claims.roles };
+    req.auth = {
+      userId: claims.userId,
+      sessionId: claims.sessionId,
+      // Unknown role names in the database (e.g. a retired role) grant nothing.
+      roles: session.user.roles.map((r) => r.role.name).filter(isRoleName),
+      status: session.user.status,
+    };
     next();
   };
 }
@@ -106,3 +126,34 @@ export function authOf(req: Request): AuthContext {
   }
   return req.auth;
 }
+
+/**
+ * Requires **every** listed permission (from the caller's roles; see common/constants/rbac.ts).
+ * Mount after `authenticate`. Permissions are typed, so a misspelled one doesn't compile.
+ * Denials are logged with the missing permissions but not revealed to the client.
+ */
+export function authorize(...required: [Permission, ...Permission[]]): RequestHandler {
+  return (req, _res, next) => {
+    const { userId, roles } = authOf(req);
+    if (!hasPermissions(roles, required)) {
+      req.log.warn({ userId, roles, required }, 'permission denied');
+      throw new ForbiddenError('You do not have permission to perform this action.', {
+        code: ErrorCode.FORBIDDEN,
+      });
+    }
+    next();
+  };
+}
+
+/**
+ * Requires a fully verified account (email and phone, Stage 7 item 4). Money endpoints use
+ * this: a PENDING_VERIFICATION user can sign in and verify, but not move money.
+ */
+export const requireActiveAccount: RequestHandler = (req, _res, next) => {
+  if (authOf(req).status !== 'ACTIVE') {
+    throw new ForbiddenError('Verify your email and phone number to continue.', {
+      code: ErrorCode.ACCOUNT_NOT_ACTIVE,
+    });
+  }
+  next();
+};

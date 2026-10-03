@@ -13,7 +13,7 @@ interface FakeSession {
   userId: string;
   revokedAt: Date | null;
   expiresAt: Date;
-  user: { status: string; passwordChangedAt: Date };
+  user: { status: string; passwordChangedAt: Date; roles?: { role: { name: string } }[] };
 }
 
 function liveSession(overrides: Partial<FakeSession> = {}): FakeSession {
@@ -27,6 +27,8 @@ function liveSession(overrides: Partial<FakeSession> = {}): FakeSession {
 }
 
 function appWith(session: FakeSession | null, tokens = new TokenService(SECRET)) {
+  // Default: the user holds the USER role, as after registration.
+  if (session) session.user.roles ??= [{ role: { name: 'USER' } }];
   const findUnique = vi.fn().mockResolvedValue(session);
   const db = { session: { findUnique } } as unknown as PrismaClient;
   const app = express();
@@ -54,7 +56,7 @@ describe('authenticate', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
-      auth: { userId: 'user-1', sessionId: 'session-1', roles: ['USER'] },
+      auth: { userId: 'user-1', sessionId: 'session-1', roles: ['USER'], status: 'ACTIVE' },
     });
     expect(res.headers).not.toHaveProperty('www-authenticate');
     expect(findUnique).toHaveBeenCalledOnce();
