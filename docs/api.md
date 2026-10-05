@@ -64,6 +64,7 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 400 | `IDEMPOTENCY_KEY_REQUIRED` / `IDEMPOTENCY_KEY_INVALID` | `Idempotency-Key` header missing or malformed (see [Idempotency](#idempotency)) |
 | 409 | `IDEMPOTENCY_REQUEST_IN_PROGRESS` | A request with the same key is still being processed |
 | 413 | `PAYLOAD_TOO_LARGE` | Request body exceeds the size limit |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | Body type not accepted, or the file's contents don't match its `Content-Type` |
 | 422 | `IDEMPOTENCY_KEY_REUSED` | Key already used for a different request |
 | 401 | `INVALID_CREDENTIALS` | Email/phone or password incorrect (deliberately doesn't say which) |
 | 403 | `ACCOUNT_LOCKED` | Too many failed sign-ins; locked for 15 minutes |
@@ -78,15 +79,19 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 429 | `OTP_COOLDOWN` | A code was sent less than 60 seconds ago |
 | 409 | `ALREADY_VERIFIED` | That email or phone is already verified |
 | 403 | `INCORRECT_PASSWORD` | Re-authentication failed for a sensitive action. Counts toward the sign-in lockout. Not a 401: the access token is still valid |
-| 409 | `NAME_LOCKED` | Name can't change once KYC is submitted or approved; contact support |
+| 409 | `NAME_LOCKED` | Name can't change once any KYC tier is approved, or while a submission is under review; contact support |
 | 409 | `CONTACT_UNAVAILABLE` | The new email/phone was taken by another account before you confirmed |
 | 409 | `ACCOUNT_HAS_BALANCE` | Deactivation needs every wallet at zero; withdraw or transfer first |
 | 409 | `ACCOUNT_HAS_PENDING_TRANSACTIONS` | Deactivation waits until no transaction is pending or processing |
+| 409 | `KYC_TIER_ORDER` | Tiers are taken in order; complete the previous tier first |
+| 409 | `KYC_TIER_ALREADY_APPROVED` | You're already verified at this tier or higher |
+| 409 | `KYC_UNDER_REVIEW` | A Tier 3 submission is being reviewed; documents and address can't change until it's decided |
+| 409 | `KYC_STATE_CHANGED` | Your KYC changed while the request was running (e.g. a parallel request); reload and retry |
 | 422 | `VALIDATION_ERROR` | Well-formed request with invalid fields; see `details` |
 | 422 | `UNPROCESSABLE` | Valid request that breaks a business rule. Modules use more specific codes (e.g. `INSUFFICIENT_FUNDS`) as they are added |
 | 429 | `RATE_LIMITED` | Too many requests |
 | 500 | `INTERNAL_ERROR` | Unexpected server failure; details are only in the logs |
-| 503 | `SERVICE_UNAVAILABLE` | A dependency (database, Redis) is unavailable |
+| 503 | `SERVICE_UNAVAILABLE` | A dependency (database, Redis, the KYC provider) is unavailable |
 
 Module-specific codes are registered in [error-codes.ts](../src/common/errors/error-codes.ts) and listed here as each module is built.
 
@@ -416,5 +421,104 @@ Signing in afterwards gives `403 ACCOUNT_DISABLED`. Nothing is deleted, and your
 | `403 INCORRECT_PASSWORD` / `403 ACCOUNT_LOCKED` | Password check failed / too many failures |
 | `409 ACCOUNT_HAS_BALANCE` | A wallet still holds money (including amounts on hold) |
 | `409 ACCOUNT_HAS_PENDING_TRANSACTIONS` | A transaction to or from you is still pending or processing |
+
+### KYC (identity verification)
+
+Three tiers, taken in order (limits per tier: [ARCHITECTURE.md D3](ARCHITECTURE.md#d3--kyc-tiers-and-limits)). All routes need authentication; every route except `GET` also needs a verified email and phone (`403 ACCOUNT_NOT_ACTIVE`).
+
+| Tier | You send | Decided |
+|---|---|---|
+| 1 | Date of birth (18 or older) | At once |
+| 2 | BVN or NIN, checked against your name and date of birth | At once |
+| 3 | An ID document, a utility bill and your address | By a reviewer, after `202` |
+
+Your **legal name locks** when Tier 1 is approved: it's what KYC verifies.
+
+#### `GET /api/v1/kyc`
+
+```json
+{
+  "data": {
+    "kyc": {
+      "tier": 2, "status": "APPROVED", "requestedTier": null, "rejectionReason": null,
+      "submittedAt": "…", "reviewedAt": "…",
+      "identityNumber": { "type": "BVN" },
+      "address": null,
+      "documents": [
+        { "id": "…", "type": "PASSPORT", "mimeType": "image/png", "sizeBytes": 48211, "status": "PENDING", "uploadedAt": "…" }
+      ],
+      "next": { "tier": 3, "requires": ["idDocument", "utilityBill", "address"] }
+    }
+  }
+}
+```
+
+- `status` is the state of your **latest** request: `NOT_STARTED`, `PENDING` (queued for review), `IN_REVIEW`, `APPROVED` or `REJECTED`. `tier` is what's approved, and a rejection never lowers it.
+- `identityNumber` says which number is on file, never the number itself.
+- `next` is `null` at Tier 3.
+
+#### `POST /api/v1/kyc/tier-1`
+
+```json
+{ "dateOfBirth": "1995-04-12" }
+```
+
+**200** with the `kyc` object (Tier 1, `APPROVED`). Errors: `422` (not a real date, or under 18), `409 KYC_TIER_ALREADY_APPROVED`.
+
+#### `POST /api/v1/kyc/tier-2`
+
+```json
+{ "type": "BVN", "idNumber": "22212345678" }
+```
+
+`type` is `BVN` or `NIN`; `idNumber` is 11 digits (spaces are ignored). Rate limit: **5 per day** per user.
+
+**200** with the `kyc` object, in one of two states:
+
+- **Approved:** `tier: 2`, `status: "APPROVED"`.
+- **Rejected:** `status: "REJECTED"` with a `rejectionReason`. You stay at Tier 1 and can try again. The reason is the same whatever went wrong (mismatch, number not found, number already linked to another account), so the response can't reveal anything about someone else's number. The number isn't kept.
+
+| Error | When |
+|---|---|
+| `409 KYC_TIER_ORDER` | Tier 1 isn't approved yet |
+| `409 KYC_TIER_ALREADY_APPROVED` | Already Tier 2 or higher |
+| `429 RATE_LIMITED` | More than 5 checks today |
+| `503 SERVICE_UNAVAILABLE` | The verification provider is down. Nothing was saved and the attempt isn't counted as a rejection; retry later |
+
+#### `PUT /api/v1/kyc/documents/:type`
+
+Uploads one Tier 3 document. Send the **file itself** as the body (not multipart or JSON):
+
+```http
+PUT /api/v1/kyc/documents/UTILITY_BILL
+Content-Type: application/pdf
+
+%PDF-1.7 …
+```
+
+- `type`: `NATIONAL_ID`, `PASSPORT`, `DRIVERS_LICENSE`, `VOTERS_CARD`, `UTILITY_BILL` or `SELFIE`.
+- `Content-Type`: `image/jpeg`, `image/png` or `application/pdf`, up to 5 MB. The file's contents must match it.
+- Uploading a type again replaces your earlier upload of that type.
+- Requires Tier 2. Rate limit: 20 per hour per user.
+
+**201**:
+
+```json
+{ "data": { "document": { "id": "…", "type": "UTILITY_BILL", "mimeType": "application/pdf", "sizeBytes": 91022, "status": "PENDING", "uploadedAt": "…" } } }
+```
+
+Errors: `415 UNSUPPORTED_MEDIA_TYPE`, `413 PAYLOAD_TOO_LARGE`, `422` (empty file or unknown type), `409 KYC_TIER_ORDER`, `409 KYC_UNDER_REVIEW`.
+
+#### `POST /api/v1/kyc/tier-3`
+
+```json
+{ "address": { "line1": "1 Marina", "line2": "Flat 4", "city": "Lagos", "state": "Lagos", "country": "NG", "postalCode": "101001" } }
+```
+
+`line2` and `postalCode` are optional; `country` is a two-letter code and defaults to `NG`. You need to have uploaded **one ID document** (`NATIONAL_ID`, `PASSPORT`, `DRIVERS_LICENSE` or `VOTERS_CARD`) **and a `UTILITY_BILL`**.
+
+**202** with the `kyc` object (`status: "PENDING"`, `requestedTier: 3`). A reviewer decides. While it's `PENDING` or `IN_REVIEW`, documents and the address can't change (`409 KYC_UNDER_REVIEW`). If it's rejected, `rejectionReason` says what to fix: upload again and resubmit.
+
+Errors: `422` (missing documents are listed under `documents`), `409 KYC_TIER_ORDER`, `409 KYC_TIER_ALREADY_APPROVED`, `409 KYC_UNDER_REVIEW`.
 
 *More endpoints are added per module.*

@@ -11,6 +11,11 @@ import { PasswordResetService } from '../modules/auth/password-reset.service.ts'
 import { SessionService } from '../modules/auth/session.service.ts';
 import { TokenService } from '../modules/auth/tokens.ts';
 import { VerificationService } from '../modules/auth/verification.service.ts';
+import type { DocumentStorage } from '../modules/kyc/document-storage.ts';
+import { IdentityNumberCrypto } from '../modules/kyc/identity-crypto.ts';
+import { createKycRouter } from '../modules/kyc/kyc.routes.ts';
+import { KycService } from '../modules/kyc/kyc.service.ts';
+import type { KycProvider } from '../modules/kyc/providers/kyc-provider.ts';
 import type { MessageSender } from '../modules/notifications/notification.types.ts';
 import { createUserRouter } from '../modules/users/user.routes.ts';
 import { UserService } from '../modules/users/user.service.ts';
@@ -20,6 +25,8 @@ export interface ApiDependencies {
   rateLimitStore: RateLimitStore;
   otpStore: OtpStore;
   messageSender: MessageSender;
+  kycProvider: KycProvider;
+  documentStorage: DocumentStorage;
 }
 
 export function createApiRouter({
@@ -27,6 +34,8 @@ export function createApiRouter({
   rateLimitStore,
   otpStore,
   messageSender,
+  kycProvider,
+  documentStorage,
 }: ApiDependencies): Router {
   const tokens = new TokenService(env.JWT_ACCESS_SECRET);
   const otp = new OtpService(otpStore, env.OTP_SECRET);
@@ -51,6 +60,20 @@ export function createApiRouter({
     createUserRouter({
       users: new UserService(db, auth, otp, messageSender),
       passwords: auth,
+      authenticate,
+      rateLimitStore,
+    }),
+  );
+
+  router.use(
+    '/kyc',
+    createKycRouter({
+      kyc: new KycService(
+        db,
+        kycProvider,
+        documentStorage,
+        new IdentityNumberCrypto(env.KYC_ENCRYPTION_KEY, env.KYC_HMAC_KEY),
+      ),
       authenticate,
       rateLimitStore,
     }),

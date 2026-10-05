@@ -6,6 +6,8 @@ const valid = {
   REDIS_URL: 'redis://:s3cret-redis-pass@localhost:6379',
   JWT_ACCESS_SECRET: 'a-test-secret-that-is-at-least-32-chars-long',
   OTP_SECRET: 'another-test-secret-at-least-32-characters',
+  KYC_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64'),
+  KYC_HMAC_KEY: 'a-kyc-hmac-test-secret-at-least-32-characters',
 };
 
 function issuesFor(source: Record<string, string | undefined>): readonly string[] {
@@ -31,6 +33,10 @@ describe('parseEnv', () => {
       TRUST_PROXY_HOPS: 0,
       JWT_ACCESS_SECRET: valid.JWT_ACCESS_SECRET,
       OTP_SECRET: valid.OTP_SECRET,
+      KYC_PROVIDER: 'mock',
+      KYC_ENCRYPTION_KEY: valid.KYC_ENCRYPTION_KEY,
+      KYC_HMAC_KEY: valid.KYC_HMAC_KEY,
+      KYC_STORAGE_DIR: 'storage/kyc',
     });
   });
 
@@ -89,6 +95,10 @@ describe('parseEnv', () => {
     ['TRUST_PROXY_HOPS', 'true'],
     ['JWT_ACCESS_SECRET', 'too-short-secret'],
     ['OTP_SECRET', 'too-short-secret'],
+    ['KYC_PROVIDER', 'smileid'],
+    ['KYC_ENCRYPTION_KEY', Buffer.alloc(16, 1).toString('base64')],
+    ['KYC_ENCRYPTION_KEY', 'not base64 at all, but long enough to be 32+ characters'],
+    ['KYC_HMAC_KEY', 'too-short-secret'],
   ])('rejects invalid %s=%s', (name, value) => {
     const issues = issuesFor({ ...valid, [name]: value });
 

@@ -7,6 +7,8 @@ import {
   type RateLimitStore,
 } from '../../src/middleware/rate-limit.middleware.ts';
 import { MemoryOtpStore } from '../../src/modules/auth/otp.ts';
+import { MemoryDocumentStorage } from '../../src/modules/kyc/document-storage.ts';
+import { MockKycProvider } from '../../src/modules/kyc/providers/mock-kyc-provider.ts';
 import { HealthService } from '../../src/modules/health/health.service.ts';
 import { MemoryMessageSender } from '../../src/modules/notifications/notification.service.ts';
 
@@ -22,6 +24,8 @@ function appWith(
     rateLimitStore,
     otpStore: new MemoryOtpStore(),
     messageSender: new MemoryMessageSender(),
+    kycProvider: new MockKycProvider(),
+    documentStorage: new MemoryDocumentStorage(),
   });
 }
 

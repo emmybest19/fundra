@@ -302,7 +302,7 @@ Everything under `/api/v1/users/me` acts on the signed-in user. Endpoints are li
 
 Verified over HTTP on PostgreSQL 18.3 (PGlite): 54/54 checks for item 1 and 23/23 for password change, plus six deliberate code breaks, each caught (no address binding, code sent to a taken address, no KYC name lock, no balance check, other sessions left alive after a password change, no "different from current" rule). PGlite serves every connection from a single backend, so the row-lock races (preferences, name lock, deactivation against a posting) wait for the real-PostgreSQL integration suite.
 
-### 6.2 KYC — *Partly built (provider)*
+### 6.2 KYC — *Built (tier limits are Stage 9 item 3)*
 
 KYC verification goes through the `KycProvider` interface ([kyc-provider.ts](../src/modules/kyc/providers/kyc-provider.ts)). The KYC service depends only on the interface. `MockKycProvider` implements it now; a sandbox provider later needs only a new adapter.
 
@@ -318,6 +318,22 @@ KYC verification goes through the `KycProvider` interface ([kyc-provider.ts](../
 | Mock | Magic numbers drive it, like a payment sandbox: `00000000001` not found, `…02` name mismatch, `…03` date-of-birth mismatch, `…09` unavailable, any other 11 digits match. Documents are `PENDING` on the first lookup, then `ACCEPTED`; tests can force a rejection. It approves almost everyone, so it is allowed in every environment (the demo needs it) but is logged loudly at startup and recorded as provider `MOCK` on every decision |
 
 Verified by unit tests (18): every magic number, the matching rule, the document lifecycle and repeat submissions, plus a deliberate code break (name order made significant), caught.
+
+**Tiers and lifecycle.** Endpoints are listed in [api.md](api.md#kyc-identity-verification). Every status change goes through one table ([kyc-status.ts](../src/modules/kyc/kyc-status.ts)): `status` is the latest request, `tier` what's approved, and a rejection never lowers `tier`.
+
+| Concern | Design |
+|---|---|
+| Tier 1 | Date of birth, 18+ by the Lagos calendar, on an `ACTIVE` account (email and phone verified). Approved at once, with no provider. The legal name locks from here |
+| Tier 2 | The duplicate check comes first: the number's HMAC is compared with other profiles, which costs no provider call. Then the provider is called **outside** any transaction. The decision transaction locks the profile (`FOR UPDATE`) and re-checks that the tier hasn't moved; the name and date of birth can't have changed, because both are locked from Tier 1. On a match the number is stored AES-256-GCM-encrypted, with the profile ID as authenticated data so a ciphertext copied onto another profile won't decrypt, plus its HMAC (unique). On a rejection nothing about the number is stored. If the provider is down: 503, nothing saved, no stuck state |
+| Tier 2 rejections | One generic reason for every cause (mismatch, not found, number on another account), so the API can't confirm whose BVN is whose. The real cause, and which fields mismatched, go to the audit log. The unique index on the HMAC is the backstop if two accounts race with the same number: the losing approval becomes a `DUPLICATE_IDENTITY` rejection |
+| Documents | Raw body (`express.raw` on that route only, 5 MB, JPEG/PNG/PDF). The first bytes must match the `Content-Type` (415 otherwise), so an SVG or HTML file labelled `image/png` is refused. SHA-256 and size are stored. The storage key is server-generated (`<profileId>/<uuid>`) and checked against a pattern before touching disk. The file is written before the row and removed if the transaction fails. Re-uploading a type replaces the draft (`PENDING`) row, and the old file is deleted after commit; documents from earlier reviews stay as history |
+| Storage | `DocumentStorage` interface: `LocalDocumentStorage` (a gitignored `KYC_STORAGE_DIR`, files `0600`, never served over HTTP, no overwrites) until S3 in Stage 25 |
+| Tier 3 | ID document + utility bill + address → `PENDING` (queued for review); documents and address are frozen. The documents are also sent to the provider. If it's down the submission still succeeds, and the reviewer opening the case sends them |
+| Review | Service methods now; admin endpoints in Stage 19. A reviewer **opens** a case (`PENDING → IN_REVIEW`, assigned to them, the provider's document result attached), then approves or rejects. Approval needs the provider to have **accepted** the documents (`KYC_PROVIDER_CHECK_INCOMPLETE` otherwise). A rejection carries a reason shown to the user. Nobody reviews their own KYC (`KYC_SELF_REVIEW`), whatever their role |
+| Name lock (Stage 8 fix) | The lock used to follow `status` only, so a user approved at Tier 1 and then rejected at Tier 2 could rename themselves. It now follows `tier > 0`, or a submission under review |
+| Records | Each decision writes an audit row (from/to status, tier, provider, cause; never a number, name or address) and a `kyc.status_changed` outbox event (`userId`, `status`, `tier`) in the same transaction. Stage 10 creates the wallet from that event |
+
+Verified over HTTP on PostgreSQL 18.3 (PGlite): 59/59 checks, plus five deliberate code breaks, each caught by the check written for it: no HMAC pre-check, no magic-byte check, the old name-lock rule, no self-review guard, approval without provider acceptance. Two things wait for real PostgreSQL: the row-lock races, and the HMAC unique-index backstop. On PGlite's socket server, the first query after a failed transaction receives the previous query's response; a minimal Prisma-only script reproduces this, so it's the harness, not the KYC code.
 
 ---
 

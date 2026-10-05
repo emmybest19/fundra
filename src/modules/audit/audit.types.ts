@@ -31,7 +31,9 @@ export const AUDIT_ACTIONS = [
   'role.granted',
   'role.revoked',
   // KYC (Stage 9)
+  'kyc.document_uploaded',
   'kyc.submitted',
+  'kyc.review_started',
   'kyc.approved',
   'kyc.rejected',
   // Wallets (Stage 10)

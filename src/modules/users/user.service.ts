@@ -103,8 +103,14 @@ const CONTACT = {
   },
 } as const;
 
-/** While KYC is checking (or has checked) the legal name, the user can't change it. */
-const NAME_LOCKED_KYC: readonly KycStatus[] = ['PENDING', 'IN_REVIEW', 'APPROVED'];
+/**
+ * The legal name locks from the first KYC approval (it's what KYC verified) and while a
+ * submission is under review. Judged by `tier`, not only `status`: a user approved at Tier 1
+ * and then rejected at Tier 2 has status REJECTED but a verified name.
+ */
+export function isNameLocked(kyc: { tier: number; status: KycStatus }): boolean {
+  return kyc.tier > 0 || kyc.status === 'PENDING' || kyc.status === 'IN_REVIEW';
+}
 
 /** Money still moving: deactivating now would strand it. */
 const OPEN_TRANSACTION_STATUSES = ['PENDING', 'PROCESSING'] as const;
@@ -168,9 +174,9 @@ export class UserService {
         if (changes.firstName !== undefined || changes.lastName !== undefined) {
           // FOR SHARE: a concurrent KYC submission (which updates this row) waits for us,
           // and if it committed first we see its status. No name change slips past a submit.
-          const [kyc] = await tx.$queryRaw<{ status: KycStatus }[]>`
-            SELECT status FROM kyc_profiles WHERE user_id = ${userId}::uuid FOR SHARE`;
-          if (kyc !== undefined && NAME_LOCKED_KYC.includes(kyc.status)) {
+          const [kyc] = await tx.$queryRaw<{ status: KycStatus; tier: number }[]>`
+            SELECT status, tier FROM kyc_profiles WHERE user_id = ${userId}::uuid FOR SHARE`;
+          if (kyc !== undefined && isNameLocked(kyc)) {
             throw new ConflictError(
               'Your name is part of your identity verification and can no longer be changed here. Contact support to correct it.',
               { code: ErrorCode.NAME_LOCKED },

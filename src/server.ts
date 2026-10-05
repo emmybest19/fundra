@@ -8,6 +8,8 @@ import { logger } from './config/logger.ts';
 import { checkRedis, connectRedis, disconnectRedis, redis } from './config/redis.ts';
 import { RedisRateLimitStore } from './middleware/rate-limit.middleware.ts';
 import { RedisOtpStore } from './modules/auth/otp.ts';
+import { LocalDocumentStorage } from './modules/kyc/document-storage.ts';
+import { MockKycProvider } from './modules/kyc/providers/mock-kyc-provider.ts';
 import { HealthService } from './modules/health/health.service.ts';
 import { MemoryMessageSender } from './modules/notifications/notification.service.ts';
 
@@ -31,6 +33,9 @@ const server = createServer(
     otpStore: new RedisOtpStore(redis),
     // Stage 17 replaces this with real email/SMS delivery; until then codes are not delivered.
     messageSender: new MemoryMessageSender(),
+    // KYC_PROVIDER has one value today; a sandbox adapter becomes a second branch here.
+    kycProvider: new MockKycProvider(),
+    documentStorage: new LocalDocumentStorage(env.KYC_STORAGE_DIR),
   }),
 );
 
@@ -41,6 +46,11 @@ server.on('error', (err) => {
 
 logger.warn(
   'Email/SMS delivery is not configured yet (Stage 17): verification and reset codes are not sent',
+);
+
+logger.warn(
+  { kycProvider: env.KYC_PROVIDER },
+  'KYC uses the mock provider: identity numbers and documents are not really verified. Never use it with real customers',
 );
 
 server.listen(env.PORT, () => {

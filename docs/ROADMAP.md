@@ -52,7 +52,7 @@ Legend: `[x]` done · `[ ]` to do
 - [ ] Port the 49 migration checks from Stage 5 (30 constraints + 19 triggers) into integration tests
 - [ ] Integration test for the rate-limit Lua script on real Redis 8.8 (counting, expiry, TTL repair, concurrency)
 - [ ] Integration tests for idempotency on real PostgreSQL: all 10 scenarios, plus true concurrency (N parallel requests → one execution) and row-lock waits during takeover
-- [ ] Row-lock races on real PostgreSQL (PGlite serialises connections): concurrent preference PATCHes lose nothing; a name change racing a KYC submit; deactivation racing an incoming posting
+- [ ] Row-lock races on real PostgreSQL (PGlite serialises connections): concurrent preference PATCHes lose nothing; a name change racing a KYC submit; deactivation racing an incoming posting; two accounts racing Tier 2 with the same BVN (the HMAC unique index turns the loser into a `DUPLICATE_IDENTITY` rejection; PGlite's socket server can't run this, because it answers the first query after a failed transaction with the previous query's response)
 - [ ] CI check: `prisma migrate diff` between migrations and schema must be empty (no drift)
 
 ### Stage 7 — Auth ✅
@@ -68,7 +68,7 @@ Legend: `[x]` done · `[ ]` to do
 
 ### Stage 9 — KYC
 - [x] `KycProvider` interface + `MockKycProvider`: identity-number check (verdict only, shared name-matching rule), async document check, magic-number mock; 18 unit tests
-- [ ] KYC profile, documents, status lifecycle
+- [x] KYC profile, documents, status lifecycle: Tier 1 (DOB, 18+) and Tier 2 (BVN/NIN via provider, encrypted + HMAC, generic rejection) decided at once; Tier 3 documents (magic-byte checked, local storage) + address → review (open → approve/reject, provider must accept, no self-review); Stage 8 name-lock fix; 59/59 checks on PostgreSQL 18.3
 - [ ] Tier → limits mapping
 
 ### Stage 10 — Wallets

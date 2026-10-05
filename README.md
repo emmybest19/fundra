@@ -114,7 +114,7 @@ docs/              project definition, architecture, case study, API, security
 | Database readiness check + connection close on shutdown | Done (Stage 5 complete) |
 | Shared infrastructure: Redis, rate limiting, validation, audit, idempotency, outbox | Done (Stage 6); the Testcontainers integration suite is deferred until Docker is installed |
 | Users (Stage 8): profile, contact change, preferences, status lifecycle, deactivation, password change | Done |
-| KYC (Stage 9) | Next |
+| KYC (Stage 9): `KycProvider` + mock, tiers 1–3, documents, review lifecycle | In progress (items 1–2 of 3 done; tier limits next) |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).
@@ -212,6 +212,10 @@ Configuration lives in a local `.env` file, which git ignores. `src/config/env.t
 | `TRUST_PROXY_HOPS` | no | `0` | Number of reverse proxies in front of the app (0–10). Keep `0` unless behind a load balancer; otherwise clients could fake their IP with `X-Forwarded-For` |
 | `JWT_ACCESS_SECRET` | **yes** | — | Access-token signing key, ≥32 characters of random data. Generate one with `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`. Changing it signs everyone out of their current access tokens (refresh tokens keep working) |
 | `OTP_SECRET` | **yes** | — | HMAC key for one-time codes stored in Redis, ≥32 characters of random data (generate the same way). Must differ from `JWT_ACCESS_SECRET`. Changing it invalidates codes already sent |
+| `KYC_ENCRYPTION_KEY` | **yes** | — | AES-256-GCM key for BVN/NIN at rest: exactly 32 random bytes, base64. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Changing it makes stored numbers unreadable |
+| `KYC_HMAC_KEY` | **yes** | — | HMAC key for BVN/NIN uniqueness, ≥32 characters of random data; different from the other secrets. Changing it breaks duplicate detection for numbers already stored |
+| `KYC_PROVIDER` | no | `mock` | Only `mock` exists. It approves almost anyone, so the server logs a warning at startup |
+| `KYC_STORAGE_DIR` | no | `storage/kyc` | Where KYC documents are written (git-ignored). Never served over HTTP |
 | `POSTGRES_USER` · `POSTGRES_PASSWORD` · `POSTGRES_DB` · `REDIS_PASSWORD` | for Docker | — | Read by `docker-compose.yml`, not the app |
 | `POSTGRES_PORT` · `REDIS_PORT` | no | `5432` · `6379` | Host ports used by `docker-compose.yml`. Set `POSTGRES_PORT=5433` if another PostgreSQL already uses 5432 (the case on the original dev machine) |
 

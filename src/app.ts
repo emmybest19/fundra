@@ -12,6 +12,8 @@ import { requestId } from './middleware/request-id.middleware.ts';
 import { requestLogger } from './middleware/request-logger.middleware.ts';
 import { corsPolicy, jsonBody, securityHeaders } from './middleware/security.middleware.ts';
 import type { OtpStore } from './modules/auth/otp.ts';
+import type { DocumentStorage } from './modules/kyc/document-storage.ts';
+import type { KycProvider } from './modules/kyc/providers/kyc-provider.ts';
 import { createHealthRouter } from './modules/health/health.routes.ts';
 import type { HealthService } from './modules/health/health.service.ts';
 import type { MessageSender } from './modules/notifications/notification.types.ts';
@@ -26,6 +28,10 @@ export interface AppDependencies {
   otpStore: OtpStore;
   /** Email/SMS delivery (Stage 17); in memory until then and in tests. */
   messageSender: MessageSender;
+  /** Identity verification (Stage 9); the mock until a sandbox provider is added. */
+  kycProvider: KycProvider;
+  /** KYC document files: local disk now, S3 later; in memory in tests. */
+  documentStorage: DocumentStorage;
 }
 
 /** Middleware order is deliberate; see docs/ARCHITECTURE.md §5. */
@@ -35,6 +41,8 @@ export function createApp({
   rateLimitStore,
   otpStore,
   messageSender,
+  kycProvider,
+  documentStorage,
 }: AppDependencies): Express {
   const app = express();
 
@@ -53,7 +61,17 @@ export function createApp({
   // Stage 15: the webhooks router mounts here, before JSON parsing (signatures need the raw body).
 
   app.use(jsonBody);
-  app.use('/api/v1', createApiRouter({ db, rateLimitStore, otpStore, messageSender }));
+  app.use(
+    '/api/v1',
+    createApiRouter({
+      db,
+      rateLimitStore,
+      otpStore,
+      messageSender,
+      kycProvider,
+      documentStorage,
+    }),
+  );
 
   app.use(notFoundHandler);
   app.use(errorHandler);

@@ -11,6 +11,8 @@ export default defineConfig({
       REDIS_URL: 'redis://localhost:6379',
       JWT_ACCESS_SECRET: 'test-only-access-token-secret-not-for-production-use',
       OTP_SECRET: 'test-only-otp-hmac-secret-not-for-production-use-ok',
+      KYC_ENCRYPTION_KEY: 'dGVzdC1vbmx5LWt5Yy1lbmNyeXB0aW9uLWtleS0zMmI=',
+      KYC_HMAC_KEY: 'test-only-kyc-hmac-secret-not-for-production-use',
     },
     // Each test starts from a clean slate of mocks, spies and stubbed env vars.
     restoreMocks: true,

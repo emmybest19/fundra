@@ -202,6 +202,8 @@ One per user. Holds the **current** tier and the latest upgrade request; decisio
 
 Index: `(kyc_profile_id)`.
 
+`PENDING` rows are the user's current draft: re-uploading a type replaces its draft row. `ACCEPTED`/`REJECTED` rows come from earlier reviews and are kept as history.
+
 ### `tier_limits`
 
 D3 limits as data, seeded and editable by admins.

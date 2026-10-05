@@ -46,7 +46,7 @@ export interface OutboxEventPayloads {
   };
   'kyc.status_changed': {
     userId: string;
-    status: 'APPROVED' | 'REJECTED' | 'IN_REVIEW';
+    status: 'APPROVED' | 'REJECTED' | 'PENDING' | 'IN_REVIEW';
     tier: number;
   };
   'auth.login_succeeded': {

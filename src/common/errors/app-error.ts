@@ -93,6 +93,15 @@ export class PayloadTooLargeError extends AppError {
   }
 }
 
+export class UnsupportedMediaTypeError extends AppError {
+  constructor(
+    message = 'The request body has an unsupported type.',
+    options: AppErrorOptions = {},
+  ) {
+    super(415, ErrorCode.UNSUPPORTED_MEDIA_TYPE, message, options);
+  }
+}
+
 /** A well-formed request that breaks a business rule (insufficient funds, limit exceeded, ...). */
 export class UnprocessableError extends AppError {
   constructor(message: string, options: AppErrorOptions = {}) {
