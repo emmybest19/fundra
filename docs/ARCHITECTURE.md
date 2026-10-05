@@ -302,6 +302,23 @@ Everything under `/api/v1/users/me` acts on the signed-in user. Endpoints are li
 
 Verified over HTTP on PostgreSQL 18.3 (PGlite): 54/54 checks for item 1 and 23/23 for password change, plus six deliberate code breaks, each caught (no address binding, code sent to a taken address, no KYC name lock, no balance check, other sessions left alive after a password change, no "different from current" rule). PGlite serves every connection from a single backend, so the row-lock races (preferences, name lock, deactivation against a posting) wait for the real-PostgreSQL integration suite.
 
+### 6.2 KYC — *Partly built (provider)*
+
+KYC verification goes through the `KycProvider` interface ([kyc-provider.ts](../src/modules/kyc/providers/kyc-provider.ts)). The KYC service depends only on the interface. `MockKycProvider` implements it now; a sandbox provider later needs only a new adapter.
+
+| Concern | Design |
+|---|---|
+| Identity numbers (Tier 2) | `verifyIdentityNumber` checks a BVN or NIN against the name and date of birth the user gave, and answers at once: `MATCH`, `MISMATCH` (which fields) or `NOT_FOUND` |
+| Documents (Tier 3) | `submitDocumentCheck`, then `getDocumentCheck`: `PENDING` → `ACCEPTED` or `REJECTED` (with a reason). Async because real providers are; webhooks can plug in later. The result is input for the admin reviewer (`kyc:review`), not the decision |
+| Data minimisation | Providers return a **verdict, never the record**. An adapter compares the record it receives with the shared `matchIdentity` rule and discards it, so Fundra never holds the provider's copy of a person |
+| Name matching | One rule for every adapter ([identity-match.ts](../src/modules/kyc/providers/identity-match.ts)): case, accents and punctuation ignored; first and last name match in either order; middle names compared only when both sides have one; dates of birth must be equal |
+| Outages | `KycProviderUnavailableError` (no identity number in the message). The attempt stays retryable; the service maps it to 503 |
+| Duplicates | Each request carries Fundra's `reference` for the attempt; a repeated reference reuses the provider's check |
+| Log safety | The number travels as `idNumber`, which is in `SENSITIVE_KEYS` (as are `bvn` and `nin`), so the logger and audit sanitizer redact it |
+| Mock | Magic numbers drive it, like a payment sandbox: `00000000001` not found, `…02` name mismatch, `…03` date-of-birth mismatch, `…09` unavailable, any other 11 digits match. Documents are `PENDING` on the first lookup, then `ACCEPTED`; tests can force a rejection. It approves almost everyone, so it is allowed in every environment (the demo needs it) but is logged loudly at startup and recorded as provider `MOCK` on every decision |
+
+Verified by unit tests (18): every magic number, the matching rule, the document lifecycle and repeat submissions, plus a deliberate code break (name order made significant), caught.
+
 ---
 
 ## 7. Financial core — *Designed*

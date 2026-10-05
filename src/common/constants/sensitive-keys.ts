@@ -15,6 +15,7 @@ export const SENSITIVE_KEYS = [
   'pin',
   'bvn',
   'nin',
+  'idNumber',
   'authorization',
   'cookie',
 ] as const;

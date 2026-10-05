@@ -67,7 +67,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Change password while signed in (`POST /users/me/password`): current password re-checked with the shared lockout; every session revoked and a fresh one opened for this device, so all old tokens die; 23/23 checks on PostgreSQL 18.3
 
 ### Stage 9 — KYC
-- [ ] `KycProvider` interface + `MockKycProvider`
+- [x] `KycProvider` interface + `MockKycProvider`: identity-number check (verdict only, shared name-matching rule), async document check, magic-number mock; 18 unit tests
 - [ ] KYC profile, documents, status lifecycle
 - [ ] Tier → limits mapping
 
