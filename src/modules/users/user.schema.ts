@@ -2,7 +2,7 @@
 // database CHECK constraints require (docs/DATABASE.md, users).
 import { z } from 'zod';
 import { otpCode } from '../auth/otp.ts';
-import { currentPassword } from '../auth/password.ts';
+import { currentPassword, password } from '../auth/password.ts';
 
 /** Lower-cased and trimmed, so `Emma@Fundra.dev` and `emma@fundra.dev` are one account. */
 export const email = z
@@ -84,4 +84,14 @@ export const DEACTIVATION_REASONS = [
 export const deactivateBody = z.strictObject({
   password: currentPassword,
   reason: z.enum(DEACTIVATION_REASONS).optional(),
+});
+
+/**
+ * Change password while signed in. The new one follows the registration policy; the
+ * personal-data and "not the same as before" rules need the account, so the service checks
+ * them.
+ */
+export const changePasswordBody = z.strictObject({
+  currentPassword,
+  newPassword: password,
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  changePasswordBody,
   confirmEmailChangeBody,
   confirmPhoneChangeBody,
   deactivateBody,
@@ -65,5 +66,21 @@ describe('deactivateBody', () => {
 
   it('requires the password', () => {
     expect(deactivateBody.safeParse({ reason: 'OTHER' }).success).toBe(false);
+  });
+});
+
+describe('changePasswordBody', () => {
+  it('accepts any current password but holds the new one to the policy', () => {
+    expect(
+      changePasswordBody.safeParse({ currentPassword: 'old', newPassword: 'brand new secret 9' })
+        .success,
+    ).toBe(true);
+    expect(
+      changePasswordBody.safeParse({ currentPassword: 'old', newPassword: 'short' }).success,
+    ).toBe(false);
+    expect(
+      changePasswordBody.safeParse({ currentPassword: '', newPassword: 'brand new secret 9' })
+        .success,
+    ).toBe(false);
   });
 });

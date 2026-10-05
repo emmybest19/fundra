@@ -365,6 +365,35 @@ Two steps, so the account never holds an address you don't control:
 
 Errors: `403 INCORRECT_PASSWORD`, `403 ACCOUNT_LOCKED`, `422` (same as your current address), `400 INVALID_OTP`, `409 CONTACT_UNAVAILABLE`, `429 OTP_COOLDOWN`, `503`.
 
+#### `POST /api/v1/users/me/password` (*sensitive*)
+
+```json
+{ "currentPassword": "purple elephant 42", "newPassword": "green giraffe 77 tall" }
+```
+
+**200**, with a new token pair in the same shape as `/auth/refresh` (`Cache-Control: no-store`):
+
+```json
+{ "data": { "tokenType": "Bearer", "accessToken": "…", "accessTokenExpiresAt": "…", "refreshToken": "fnd_rt_…", "refreshTokenExpiresAt": "…" } }
+```
+
+On success:
+
+- **Every** session ends, this one included, so all earlier access and refresh tokens stop working on every device.
+- This device continues with the tokens in the response. Switch to them straight away.
+- Other devices must sign in again with the new password.
+- A "password changed" alert is emailed.
+
+The new password follows the registration rules, must not contain your handle or email name, and must differ from the current one.
+
+| Error | When |
+|---|---|
+| `403 INCORRECT_PASSWORD` | `currentPassword` is wrong (counts toward the sign-in lockout) |
+| `403 ACCOUNT_LOCKED` | Too many wrong passwords; try again in 15 minutes |
+| `422 VALIDATION_ERROR` | New password breaks a rule. Nothing changes and you stay signed in |
+
+Forgot the current password? Use [password reset](#password-reset) instead.
+
 #### `POST /api/v1/users/me/deactivate` (*sensitive*)
 
 ```json

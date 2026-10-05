@@ -11,6 +11,7 @@ import type {
 } from '../../generated/prisma/client.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import type { AuditContext } from '../audit/audit.types.ts';
+import type { IssuedTokens } from '../auth/auth.service.ts';
 import type { OtpService } from '../auth/otp.ts';
 import { failClosed, invalidOtp, otpCooldown } from '../auth/verification.service.ts';
 import type { MessageSender } from '../notifications/notification.types.ts';
@@ -70,6 +71,17 @@ export async function createUser(tx: Prisma.TransactionClient, input: NewUser): 
 /** Re-authentication, provided by AuthService.confirmPassword (shares the login lockout). */
 export interface PasswordConfirmer {
   confirmPassword(userId: string, password: string, context: AuditContext): Promise<User>;
+}
+
+/** Provided by AuthService.changePassword: it owns sessions and tokens. */
+export interface PasswordChanger {
+  changePassword(
+    userId: string,
+    currentSessionId: string,
+    currentPassword: string,
+    newPassword: string,
+    context: AuditContext,
+  ): Promise<IssuedTokens>;
 }
 
 export type ContactChannel = 'email' | 'phone';

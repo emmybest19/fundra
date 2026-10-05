@@ -31,7 +31,7 @@ export function createApiRouter({
   const tokens = new TokenService(env.JWT_ACCESS_SECRET);
   const otp = new OtpService(otpStore, env.OTP_SECRET);
   const authenticate = createAuthenticate({ db, tokens });
-  const auth = new AuthService(db, tokens);
+  const auth = new AuthService(db, tokens, messageSender);
   const router = Router();
 
   router.use(
@@ -50,6 +50,7 @@ export function createApiRouter({
     '/users',
     createUserRouter({
       users: new UserService(db, auth, otp, messageSender),
+      passwords: auth,
       authenticate,
       rateLimitStore,
     }),

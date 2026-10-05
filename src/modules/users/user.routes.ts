@@ -8,10 +8,10 @@ import {
   type RateLimitStore,
 } from '../../middleware/rate-limit.middleware.ts';
 import { createUserController } from './user.controller.ts';
-import type { UserService } from './user.service.ts';
+import type { PasswordChanger, UserService } from './user.service.ts';
 
 /**
- * Password re-checks, codes sent to new addresses and deactivation, per user. Keyed by user
+ * Password changes and re-checks, codes sent to new addresses and deactivation, per user. Keyed by user
  * (not IP) because these routes are authenticated: one account can't spread attempts across
  * addresses. Password guessing is also capped by the login lockout (5 failures → 15 min).
  */
@@ -24,16 +24,18 @@ export const ACCOUNT_SECURITY_RATE_LIMIT: RateLimitPolicy = {
 
 export interface UserRouterDependencies {
   users: UserService;
+  passwords: PasswordChanger;
   authenticate: RequestHandler;
   rateLimitStore: RateLimitStore;
 }
 
 export function createUserRouter({
   users,
+  passwords,
   authenticate,
   rateLimitStore,
 }: UserRouterDependencies): Router {
-  const controller = createUserController(users);
+  const controller = createUserController(users, passwords);
   const sensitive = rateLimit(rateLimitStore, ACCOUNT_SECURITY_RATE_LIMIT);
   const router = Router();
 
@@ -49,6 +51,7 @@ export function createUserRouter({
   router.post('/me/phone', sensitive, controller.requestPhoneChange);
   router.post('/me/phone/confirm', sensitive, controller.confirmPhoneChange);
 
+  router.post('/me/password', sensitive, controller.changePassword);
   router.post('/me/deactivate', sensitive, controller.deactivate);
 
   return router;

@@ -4,14 +4,22 @@ import {
   ErrorCode,
   ForbiddenError,
   UnauthorizedError,
+  ValidationError,
 } from '../../common/errors/index.ts';
 import { writeOutboxEvent } from '../../common/outbox/outbox.writer.ts';
 import type { PrismaClient, Session, User } from '../../generated/prisma/client.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import type { AuditContext } from '../audit/audit.types.ts';
+import type { MessageSender } from '../notifications/notification.types.ts';
 import { createUser, findUserByIdentifier, isDisabled } from '../users/user.service.ts';
 import type { LoginInput, RegisterInput } from './auth.schema.ts';
-import { hashPassword, needsRehash, verifyAgainstDummy, verifyPassword } from './password.ts';
+import {
+  hashPassword,
+  needsRehash,
+  passwordIsNotPersonal,
+  verifyAgainstDummy,
+  verifyPassword,
+} from './password.ts';
 import {
   generateRefreshToken,
   hashRefreshToken,
@@ -68,11 +76,18 @@ function uniqueViolationTarget(err: unknown): string | undefined {
 export class AuthService {
   readonly #db: PrismaClient;
   readonly #tokens: TokenService;
+  readonly #sender: MessageSender;
   readonly #now: () => number;
 
-  constructor(db: PrismaClient, tokens: TokenService, now: () => number = Date.now) {
+  constructor(
+    db: PrismaClient,
+    tokens: TokenService,
+    sender: MessageSender,
+    now: () => number = Date.now,
+  ) {
     this.#db = db;
     this.#tokens = tokens;
+    this.#sender = sender;
     this.#now = now;
   }
 
@@ -219,6 +234,90 @@ export class AuthService {
         });
       }
     });
+  }
+
+  /**
+   * Changes the password of a signed-in user (Stage 8). Re-checks the current password
+   * (shares the login lockout), applies the new-password rules, then in one transaction:
+   * saves the new hash, ends **every** session including this one, and opens a fresh session
+   * for this device. Every token issued before the change stops working at once, on every
+   * device; this device carries on with the tokens returned here. Audited, with an outbox
+   * event and an alert email.
+   */
+  async changePassword(
+    userId: string,
+    currentSessionId: string,
+    currentPassword: string,
+    newPassword: string,
+    context: AuditContext,
+  ): Promise<IssuedTokens> {
+    const user = await this.confirmPassword(userId, currentPassword, context);
+    if (!passwordIsNotPersonal(newPassword, user)) {
+      throw new ValidationError([
+        { path: 'body.newPassword', message: 'Must not contain your handle or email name' },
+      ]);
+    }
+    if (await verifyPassword(user.passwordHash, newPassword)) {
+      throw new ValidationError([
+        { path: 'body.newPassword', message: 'Must be different from your current password' },
+      ]);
+    }
+
+    // Hash outside the transaction: ~50 ms of CPU shouldn't hold a database connection.
+    const passwordHash = await hashPassword(newPassword);
+    const current = await this.#db.session.findUniqueOrThrow({ where: { id: currentSessionId } });
+    const now = this.#now();
+    const refresh = generateRefreshToken();
+    const expiresAt = new Date(now + SESSION_TTL_MS);
+
+    const session = await this.#db.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: { passwordHash, passwordChangedAt: new Date(now) },
+      });
+      const { count } = await tx.session.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date(now), revokeReason: 'PASSWORD_CHANGED' },
+      });
+      const created = await tx.session.create({
+        data: {
+          userId,
+          deviceId: current.deviceId,
+          deviceName: current.deviceName,
+          userAgent: context.userAgent ?? current.userAgent,
+          ipAddress: context.ip ?? null,
+          lastUsedAt: new Date(now),
+          expiresAt,
+        },
+      });
+      await tx.refreshToken.create({
+        data: { sessionId: created.id, tokenHash: refresh.hash, expiresAt },
+      });
+      await recordAudit(tx, {
+        action: 'auth.password_changed',
+        actor: { type: 'USER', userId },
+        resource: { type: 'user', id: userId },
+        context,
+        // The current session is replaced, not lost: count only the other devices.
+        metadata: {
+          otherSessionsRevoked: Math.max(0, count - 1),
+          replacedSessionId: currentSessionId,
+          newSessionId: created.id,
+        },
+      });
+      await writeOutboxEvent(tx, {
+        type: 'auth.password_changed',
+        aggregate: { type: 'user', id: userId },
+        payload: { userId },
+      });
+      return created;
+    });
+
+    // Security alert. Best effort: the change has already happened.
+    await this.#sender
+      .send({ channel: 'EMAIL', to: user.email, template: 'password_changed', data: {} })
+      .catch(() => undefined);
+    return this.#issue(userId, session, refresh.token);
   }
 
   async #issue(userId: string, session: Session, refreshToken: string): Promise<IssuedTokens> {

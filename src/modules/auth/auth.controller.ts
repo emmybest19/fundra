@@ -20,7 +20,7 @@ import type { PasswordResetService } from './password-reset.service.ts';
 import type { SessionService } from './session.service.ts';
 import type { VerificationChannel, VerificationService } from './verification.service.ts';
 
-function tokenResponse(tokens: IssuedTokens) {
+export function tokenResponse(tokens: IssuedTokens) {
   return {
     tokenType: 'Bearer' as const,
     accessToken: tokens.accessToken,
@@ -31,7 +31,7 @@ function tokenResponse(tokens: IssuedTokens) {
 }
 
 /** Responses carrying tokens must never be cached by browsers or proxies. */
-function noStore(res: Response): Response {
+export function noStore(res: Response): Response {
   return res.set({ 'Cache-Control': 'no-store', Pragma: 'no-cache' });
 }
 

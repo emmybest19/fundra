@@ -33,6 +33,14 @@ function setup() {
     confirmContactChange: vi.fn().mockResolvedValue({ id: 'u-1' }),
     deactivate: vi.fn().mockResolvedValue(undefined),
   };
+  const passwords = {
+    changePassword: vi.fn().mockResolvedValue({
+      accessToken: 'new.access.token',
+      accessTokenExpiresAt: new Date('2026-10-05T10:15:00Z'),
+      refreshToken: 'fnd_rt_new',
+      refreshTokenExpiresAt: new Date('2026-11-04T10:00:00Z'),
+    }),
+  };
   const app = express();
   app.use(express.json());
   app.use(createRequestLogger(createLogger({ level: 'silent', pretty: false })));
@@ -40,6 +48,7 @@ function setup() {
     '/users',
     createUserRouter({
       users: users as unknown as UserService,
+      passwords,
       authenticate: fakeAuthenticate,
       rateLimitStore: new MemoryRateLimitStore(),
     }),
@@ -50,7 +59,7 @@ function setup() {
     patch: (path: string) => request(app).patch(path).set('X-Test-User', userId),
     post: (path: string) => request(app).post(path).set('X-Test-User', userId),
   });
-  return { app, users, as };
+  return { app, users, passwords, as };
 }
 
 describe('users router', () => {
@@ -124,6 +133,40 @@ describe('users router', () => {
       .send({ password: 'secret', reason: 'OTHER' });
     expect(res.status).toBe(204);
     expect(users.deactivate).toHaveBeenCalledWith('u-1', 'secret', 'OTHER', expect.anything());
+  });
+
+  it('changes the password for this session and returns the new tokens, uncacheable', async () => {
+    const { passwords, as } = setup();
+    const res = await as('u-1')
+      .post('/users/me/password')
+      .send({ currentPassword: 'old secret', newPassword: 'brand new secret 9' });
+    expect(res.status).toBe(200);
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(res.body).toEqual({
+      data: {
+        tokenType: 'Bearer',
+        accessToken: 'new.access.token',
+        accessTokenExpiresAt: '2026-10-05T10:15:00.000Z',
+        refreshToken: 'fnd_rt_new',
+        refreshTokenExpiresAt: '2026-11-04T10:00:00.000Z',
+      },
+    });
+    expect(passwords.changePassword).toHaveBeenCalledWith(
+      'u-1',
+      's-1',
+      'old secret',
+      'brand new secret 9',
+      expect.anything(),
+    );
+  });
+
+  it('rejects a new password that breaks the policy before calling the service', async () => {
+    const { passwords, as } = setup();
+    const res = await as('u-1')
+      .post('/users/me/password')
+      .send({ currentPassword: 'old secret', newPassword: 'short' });
+    expect(res.status).toBe(422);
+    expect(passwords.changePassword).not.toHaveBeenCalled();
   });
 
   it('rate-limits sensitive actions per user, not per IP', async () => {

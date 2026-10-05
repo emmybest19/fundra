@@ -62,9 +62,9 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Email/phone verification (OTP → `ACTIVE`), password reset (signs out everywhere, clears lockout); `redis` readiness kept non-critical, OTP store fails closed (503). 26/26 behaviours on PostgreSQL 18.3; Lua verified on ioredis-mock
 - [x] `authorize(permission)` middleware (RBAC) + `requireActiveAccount`; roles loaded from the database per request (grant/revoke immediate); verified on PostgreSQL 18.3
 
-### Stage 8 — Users
+### Stage 8 — Users ✅
 - [x] Profile, contact info, preferences, status, deactivation: name locks at KYC submission, contact change via a code bound to the new address, password re-check for sensitive actions, deactivation (zero balance, nothing pending, wallets closed, sessions revoked); 54/54 checks on PostgreSQL 18.3
-- [ ] Change password while signed in (current + new; revoke other sessions, reissue tokens for this one)
+- [x] Change password while signed in (`POST /users/me/password`): current password re-checked with the shared lockout; every session revoked and a fresh one opened for this device, so all old tokens die; 23/23 checks on PostgreSQL 18.3
 
 ### Stage 9 — KYC
 - [ ] `KycProvider` interface + `MockKycProvider`
