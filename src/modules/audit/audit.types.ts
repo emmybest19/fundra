@@ -18,7 +18,13 @@ export const AUDIT_ACTIONS = [
   'user.phone_verified',
   'auth.token_reuse_detected',
   'auth.session_revoked',
+  'auth.reauth_failed',
   // Users & access (Stages 8, 19)
+  'user.profile_updated',
+  'user.preferences_updated',
+  'user.contact_change_requested',
+  'user.email_changed',
+  'user.phone_changed',
   'user.suspended',
   'user.reactivated',
   'user.deactivated',

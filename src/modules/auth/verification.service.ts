@@ -10,6 +10,7 @@ import type { PrismaClient, User } from '../../generated/prisma/client.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import type { AuditContext } from '../audit/audit.types.ts';
 import type { MessageSender } from '../notifications/notification.types.ts';
+import { statusAfterVerification } from '../users/user-status.ts';
 import { OTP_RESEND_COOLDOWN_MS, type OtpPurpose, type OtpService } from './otp.ts';
 
 export type VerificationChannel = 'email' | 'phone';
@@ -107,10 +108,7 @@ export class VerificationService {
         where: { id: userId },
         data: channel === 'email' ? { emailVerifiedAt: now } : { phoneVerifiedAt: now },
       });
-      const activate =
-        verified.status === 'PENDING_VERIFICATION' &&
-        verified.emailVerifiedAt !== null &&
-        verified.phoneVerifiedAt !== null;
+      const activate = statusAfterVerification(verified) !== verified.status;
       await recordAudit(tx, {
         action: channel === 'email' ? 'user.email_verified' : 'user.phone_verified',
         actor: { type: 'USER', userId },

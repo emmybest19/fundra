@@ -132,7 +132,7 @@ flowchart TD
 | Module | Responsibility | Owns |
 |---|---|---|
 | auth | Register, login, logout, tokens, rotation, verification, password reset, sessions, devices | Session, RefreshToken |
-| users | Profile, contacts, preferences, status, deactivation | User |
+| users (*Built*: profile, contacts, preferences, status, deactivation; see [§6.1](#61-users--built)) | Profile, contacts, preferences, status, deactivation | User |
 | kyc | KYC profile, documents, provider abstraction, status lifecycle, tiers and limits | KycProfile, KycDocument |
 | wallets | Wallet lifecycle (created on KYC approval), status, balance reads | Wallet |
 | ledger | Balanced postings, ledger accounts, holds, integrity | LedgerAccount, LedgerEntry, Hold |
@@ -285,6 +285,21 @@ Other auth details:
 - Passwords are hashed with Argon2id.
 - OTPs are hashed in Redis with a TTL and a maximum number of attempts.
 - Each login creates a Session row with device, IP and user agent, which the user can list and revoke.
+
+### 6.1 Users — *Built*
+
+Everything under `/api/v1/users/me` acts on the signed-in user. Endpoints are listed in [api.md](api.md#users-the-signed-in-user).
+
+| Concern | Design |
+|---|---|
+| Status lifecycle | One transition table ([user-status.ts](../src/modules/users/user-status.ts)) that every status change goes through. `PENDING_VERIFICATION → ACTIVE` when both contacts are verified; any live status → `SUSPENDED` (admin) or `DEACTIVATED`; reactivation is an admin action. `ACTIVE` never goes back to `PENDING_VERIFICATION`, because a verified contact is only ever replaced by another verified one |
+| Profile | Name and handle are editable. The name **locks once KYC is submitted**: it's what KYC verifies, and what a sender sees when confirming a recipient. The lock is read with `SELECT … FOR SHARE` on the KYC row, so a concurrent submission can't slip a name change past the check. Only fields that change are written and audited, and names are never put in audit metadata |
+| Re-authentication | Contact changes and deactivation need the password (`AuthService.confirmPassword`). This shares login's lockout, so a stolen access token can't be used to guess the password. A wrong password is `403 INCORRECT_PASSWORD`, not 401, so clients don't react by refreshing or signing out |
+| Contact change | Request (password) → a code goes to the **new** address → confirm. The code's HMAC includes the new address, so a code sent to one address can't confirm another (a deliberate code break proved this matters: without the binding, the account's email moved to an attacker's address). The new address is saved as verified, which can complete activation. The **old** address is alerted, and the audit log keeps masked addresses only. An address that belongs to another account gets the same 202 and the same cooldown, but no code is sent |
+| Preferences | Notification channels per category in `users.preferences` (jsonb), defined by a Zod schema. Reads fill in defaults and drop retired keys. PATCH takes a strict deep-partial and merges under `SELECT … FOR UPDATE`, so concurrent updates don't overwrite each other. Security emails can't be disabled; marketing is opt-in |
+| Deactivation | Password + **zero balance in every wallet** + **no pending or processing transaction** to or from the user. Locks the user row, then the wallets (in id order), and in one transaction: `DEACTIVATED`, wallets `CLOSED`, every session revoked, audit, `user.deactivated` outbox event. Nothing is deleted, and the email, phone and handle stay reserved. Money movement (Stage 11) must reject `CLOSED` wallets, so nothing can land after the check |
+
+Verified over HTTP on PostgreSQL 18.3 (PGlite): 54/54 checks, plus four deliberate code breaks, each caught (no address binding, code sent to a taken address, no KYC name lock, no balance check). PGlite serves every connection from a single backend, so the row-lock races (preferences, name lock, deactivation against a posting) wait for the real-PostgreSQL integration suite.
 
 ---
 
@@ -590,7 +605,8 @@ This reflects the repository as it stands, not the design.
 
 | Gap | Impact |
 |---|---|
-| A running server with health endpoints and no business modules yet; the module `.ts` files are placeholders | `/api/v1` returns 404 for every path until modules are mounted |
+| Business modules beyond auth and users are placeholders | Their `/api/v1` paths return 404 until each stage mounts them |
+| Deactivated accounts can't be reactivated yet | Reactivation is an admin action (Stage 19). It must reopen the `CLOSED` wallets too |
 | Redis is a *non-critical* readiness check | Deliberate (re-decided in Stage 7): during a Redis outage, readiness says `degraded` while OTP flows return 503. Revisit for job queues (Stage 16) |
 | Verification and reset codes aren't delivered yet | `MemoryMessageSender` holds them in memory until Stage 17 adds real email/SMS; the server logs a warning at startup. Tests read codes from the memory sender |
 | Rate limiting hasn't run against a real Redis server | The Lua script was verified on ioredis-mock's Lua engine; real Redis 8.8 waits for Docker and the Stage 6 integration tests |

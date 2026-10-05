@@ -1,6 +1,8 @@
 // Zod schemas for users: contact details and public identity, normalised to the forms the
 // database CHECK constraints require (docs/DATABASE.md, users).
 import { z } from 'zod';
+import { otpCode } from '../auth/otp.ts';
+import { currentPassword } from '../auth/password.ts';
 
 /** Lower-cased and trimmed, so `Emma@Fundra.dev` and `emma@fundra.dev` are one account. */
 export const email = z
@@ -41,3 +43,45 @@ export const personName = z
   .trim()
   .min(1, 'Required')
   .max(100, 'Must be at most 100 characters');
+
+/** PATCH /users/me: any of the editable profile fields, at least one. */
+export const updateProfileBody = z
+  .strictObject({
+    firstName: personName.optional(),
+    lastName: personName.optional(),
+    handle: handle.optional(),
+  })
+  .refine(
+    (body) => Object.values(body).some((value) => value !== undefined),
+    'Send at least one field to update',
+  );
+
+export type UpdateProfileInput = z.output<typeof updateProfileBody>;
+
+export const requestEmailChangeBody = z.strictObject({
+  newEmail: email,
+  password: currentPassword,
+});
+
+export const confirmEmailChangeBody = z.strictObject({ newEmail: email, code: otpCode });
+
+export const requestPhoneChangeBody = z.strictObject({
+  newPhone: phone,
+  password: currentPassword,
+});
+
+export const confirmPhoneChangeBody = z.strictObject({ newPhone: phone, code: otpCode });
+
+/** Optional and from a fixed list: free text here would be personal data kept forever in audit. */
+export const DEACTIVATION_REASONS = [
+  'NO_LONGER_NEEDED',
+  'SWITCHING_PROVIDER',
+  'PRIVACY_CONCERNS',
+  'TOO_EXPENSIVE',
+  'OTHER',
+] as const;
+
+export const deactivateBody = z.strictObject({
+  password: currentPassword,
+  reason: z.enum(DEACTIVATION_REASONS).optional(),
+});

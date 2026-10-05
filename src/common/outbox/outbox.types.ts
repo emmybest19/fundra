@@ -58,6 +58,14 @@ export interface OutboxEventPayloads {
   'auth.password_changed': {
     userId: string;
   };
+  'user.contact_changed': {
+    userId: string;
+    changed: 'email' | 'phone';
+  };
+  'user.deactivated': {
+    userId: string;
+    walletsClosed: number;
+  };
 }
 
 export type OutboxEventType = keyof OutboxEventPayloads;

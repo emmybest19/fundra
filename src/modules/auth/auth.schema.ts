@@ -1,7 +1,10 @@
 // Zod request schemas for auth.
 import { z } from 'zod';
 import { email, handle, personName, phone } from '../users/user.schema.ts';
-import { password, PASSWORD_MAX_LENGTH, passwordIsNotPersonal } from './password.ts';
+import { otpCode } from './otp.ts';
+import { currentPassword, password, passwordIsNotPersonal } from './password.ts';
+
+export { otpCode };
 
 export const registerBody = z
   .strictObject({
@@ -22,16 +25,13 @@ export type RegisterInput = z.output<typeof registerBody>;
 export const loginBody = z.strictObject({
   /** Email or phone (any accepted format). */
   identifier: z.string().trim().min(1, 'Required').max(254),
-  // Not the registration policy: older accounts may predate it. Only bound the hashing cost.
-  password: z.string().min(1, 'Required').max(PASSWORD_MAX_LENGTH),
+  password: currentPassword,
   /** Client-generated stable ID for this device, so sessions can be recognised later. */
   deviceId: z.string().trim().min(1).max(128).optional(),
   deviceName: z.string().trim().min(1).max(100).optional(),
 });
 
 export type LoginInput = z.output<typeof loginBody>;
-
-export const otpCode = z.string().regex(/^\d{6}$/, 'Must be the 6-digit code');
 
 export const confirmCodeBody = z.strictObject({ code: otpCode });
 

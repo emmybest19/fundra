@@ -35,6 +35,9 @@ const invalidCredentials = () =>
     code: ErrorCode.INVALID_CREDENTIALS,
   });
 
+const incorrectPassword = () =>
+  new ForbiddenError('The password is incorrect.', { code: ErrorCode.INCORRECT_PASSWORD });
+
 /** One error for unknown, expired and revoked refresh tokens: nothing to probe. */
 const invalidRefreshToken = () =>
   new UnauthorizedError('The session has expired. Please sign in again.', {
@@ -319,7 +322,27 @@ export class AuthService {
       await verifyAgainstDummy(password);
       throw invalidCredentials();
     }
+    return this.#checkPassword(user, password, context, 'login');
+  }
 
+  /**
+   * Re-authentication for sensitive actions by a signed-in user (contact change, deactivation,
+   * password change): proves the person holding the access token also knows the password.
+   * Shares login's lockout, so a stolen access token can't be used to guess the password here
+   * either. A wrong password is INCORRECT_PASSWORD (403), not 401: the token itself is fine
+   * and the client must not respond by refreshing or signing out.
+   */
+  async confirmPassword(userId: string, password: string, context: AuditContext): Promise<User> {
+    const user = await this.#db.user.findUniqueOrThrow({ where: { id: userId } });
+    return this.#checkPassword(user, password, context, 'reauth');
+  }
+
+  async #checkPassword(
+    user: User,
+    password: string,
+    context: AuditContext,
+    purpose: 'login' | 'reauth',
+  ): Promise<User> {
     const now = this.#now();
     if (user.lockedUntil !== null && user.lockedUntil.getTime() > now) {
       throw new ForbiddenError('Too many failed sign-in attempts. Try again later.', {
@@ -328,8 +351,8 @@ export class AuthService {
     }
 
     if (!(await verifyPassword(user.passwordHash, password))) {
-      await this.#recordFailedAttempt(user, context);
-      throw invalidCredentials();
+      await this.#recordFailedAttempt(user, context, purpose);
+      throw purpose === 'login' ? invalidCredentials() : incorrectPassword();
     }
 
     if (isDisabled(user)) {
@@ -352,7 +375,11 @@ export class AuthService {
     return this.#db.user.update({ where: { id: user.id }, data: updates });
   }
 
-  async #recordFailedAttempt(user: User, context: AuditContext): Promise<void> {
+  async #recordFailedAttempt(
+    user: User,
+    context: AuditContext,
+    purpose: 'login' | 'reauth',
+  ): Promise<void> {
     await this.#db.$transaction(async (tx) => {
       // Atomic increment: concurrent wrong guesses can't undercount.
       const { failedLoginCount } = await tx.user.update({
@@ -361,7 +388,7 @@ export class AuthService {
         select: { failedLoginCount: true },
       });
       await recordAudit(tx, {
-        action: 'auth.login_failed',
+        action: purpose === 'login' ? 'auth.login_failed' : 'auth.reauth_failed',
         actor: { type: 'USER', userId: user.id },
         context,
         metadata: { reason: 'wrong_password', consecutiveFailures: failedLoginCount },

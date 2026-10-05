@@ -108,7 +108,7 @@ erDiagram
 | `status` | `user_status` | `PENDING_VERIFICATION` · `ACTIVE` · `SUSPENDED` · `DEACTIVATED` |
 | `failed_login_count` | int, default 0 | Lockout after repeated failures |
 | `locked_until` | timestamptz null | |
-| `preferences` | jsonb, default `{}` | Validated by a Zod schema (notification channels, etc.) |
+| `preferences` | jsonb, default `{}` | Notification channels per category, defined by the Zod schema in [preferences.ts](../src/modules/users/preferences.ts). Missing keys read as defaults |
 | `deactivated_at` | timestamptz null | |
 | `created_at`, `updated_at` | timestamptz | |
 

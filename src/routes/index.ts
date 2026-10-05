@@ -12,6 +12,8 @@ import { SessionService } from '../modules/auth/session.service.ts';
 import { TokenService } from '../modules/auth/tokens.ts';
 import { VerificationService } from '../modules/auth/verification.service.ts';
 import type { MessageSender } from '../modules/notifications/notification.types.ts';
+import { createUserRouter } from '../modules/users/user.routes.ts';
+import { UserService } from '../modules/users/user.service.ts';
 
 export interface ApiDependencies {
   db: PrismaClient;
@@ -29,15 +31,25 @@ export function createApiRouter({
   const tokens = new TokenService(env.JWT_ACCESS_SECRET);
   const otp = new OtpService(otpStore, env.OTP_SECRET);
   const authenticate = createAuthenticate({ db, tokens });
+  const auth = new AuthService(db, tokens);
   const router = Router();
 
   router.use(
     '/auth',
     createAuthRouter({
-      auth: new AuthService(db, tokens),
+      auth,
       sessions: new SessionService(db),
       verification: new VerificationService(db, otp, messageSender),
       passwordReset: new PasswordResetService(db, otp, messageSender),
+      authenticate,
+      rateLimitStore,
+    }),
+  );
+
+  router.use(
+    '/users',
+    createUserRouter({
+      users: new UserService(db, auth, otp, messageSender),
       authenticate,
       rateLimitStore,
     }),

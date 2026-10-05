@@ -77,6 +77,11 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 400 | `INVALID_OTP` | Code wrong, expired, already used, or out of attempts (5) |
 | 429 | `OTP_COOLDOWN` | A code was sent less than 60 seconds ago |
 | 409 | `ALREADY_VERIFIED` | That email or phone is already verified |
+| 403 | `INCORRECT_PASSWORD` | Re-authentication failed for a sensitive action. Counts toward the sign-in lockout. Not a 401: the access token is still valid |
+| 409 | `NAME_LOCKED` | Name can't change once KYC is submitted or approved; contact support |
+| 409 | `CONTACT_UNAVAILABLE` | The new email/phone was taken by another account before you confirmed |
+| 409 | `ACCOUNT_HAS_BALANCE` | Deactivation needs every wallet at zero; withdraw or transfer first |
+| 409 | `ACCOUNT_HAS_PENDING_TRANSACTIONS` | Deactivation waits until no transaction is pending or processing |
 | 422 | `VALIDATION_ERROR` | Well-formed request with invalid fields; see `details` |
 | 422 | `UNPROCESSABLE` | Valid request that breaks a business rule. Modules use more specific codes (e.g. `INSUFFICIENT_FUNDS`) as they are added |
 | 429 | `RATE_LIMITED` | Too many requests |
@@ -288,5 +293,99 @@ When **both** email and phone are verified, the account's `status` becomes `ACTI
 ```
 
 **204**. The new password follows the registration rules. On success **every session is signed out** (all devices must sign in again), any sign-in lockout is cleared, and a "password changed" alert is emailed. Errors: `400 INVALID_OTP` (also for unknown or disabled accounts), `422` (password rules; the code is *not* used up), `429`, `503`.
+
+### Users (the signed-in user)
+
+All require `Authorization: Bearer`. Every route acts on **you**; admins manage other users through the admin endpoints (Stage 19). Routes marked *sensitive* re-check your password or send codes, and share a limit of **10 per 15 minutes per user** (keyed by account, not IP).
+
+#### `GET /api/v1/users/me`
+
+**200**. Your profile:
+
+```json
+{
+  "data": {
+    "user": {
+      "id": "01a0…", "email": "emma@fundra.dev", "emailVerified": true,
+      "phone": "+2348012345678", "phoneVerified": true,
+      "handle": "emma_o", "firstName": "Emma", "lastName": "Okafor",
+      "status": "ACTIVE", "createdAt": "…", "updatedAt": "…",
+      "roles": ["USER"],
+      "kyc": { "status": "NOT_STARTED", "tier": 0 },
+      "canTransact": true
+    }
+  }
+}
+```
+
+`canTransact` follows the same rule as the money endpoints: only `ACTIVE` accounts can move money.
+
+#### `PATCH /api/v1/users/me`
+
+Any of `firstName`, `lastName` and `handle`, at least one. Fields are normalised the same way as at registration. **200** with the updated profile. Only fields that actually change are saved and audited.
+
+| Error | When |
+|---|---|
+| `409 HANDLE_TAKEN` | Someone else has that handle |
+| `409 NAME_LOCKED` | KYC is `PENDING`, `IN_REVIEW` or `APPROVED`: your name is what KYC verifies. The handle can still change |
+| `422 VALIDATION_ERROR` | Unknown field (email, phone and status have their own flows), or invalid value |
+
+#### `GET /api/v1/users/me/preferences` · `PATCH /api/v1/users/me/preferences`
+
+Which notifications you receive, and on which channels. `GET` returns the full object, with defaults filled in. `PATCH` takes any subset and returns the full result.
+
+```json
+{
+  "notifications": {
+    "transactions": { "email": true,  "sms": false, "push": true },
+    "security":     { "email": true,  "sms": true,  "push": true },
+    "marketing":    { "email": false, "sms": false, "push": false }
+  }
+}
+```
+
+The defaults are shown above. Security emails **can't be turned off** (`422`): they're how you learn about a takeover. Marketing is opt-in. Unknown keys are rejected rather than ignored.
+
+#### Changing email or phone (*sensitive*)
+
+Two steps, so the account never holds an address you don't control:
+
+| Step | Endpoint | Body | Success |
+|---|---|---|---|
+| 1 | `POST /api/v1/users/me/email` | `{ "newEmail": "…", "password": "…" }` | **202** `{ "data": { "sent": true } }`; code sent to the **new** address |
+| 2 | `POST /api/v1/users/me/email/confirm` | `{ "newEmail": "…", "code": "123456" }` | **200** with the updated profile |
+| 1 | `POST /api/v1/users/me/phone` | `{ "newPhone": "…", "password": "…" }` | **202**; code sent by SMS to the new number |
+| 2 | `POST /api/v1/users/me/phone/confirm` | `{ "newPhone": "…", "code": "123456" }` | **200** |
+
+- Your current address keeps working until step 2. Once confirmed, the new address is **already verified**. If it was the last unverified contact, your status becomes `ACTIVE`.
+- The code only confirms the address it was sent to. A code for `a@x.dev` can't confirm `b@x.dev`.
+- The **old** address gets a "your email/phone was changed" alert.
+- An address that belongs to another account gets the same `202`, but no code is sent, so this can't be used to discover accounts.
+- Codes follow the [verification rules](#verification-one-time-codes): 10 minutes, single use, 5 attempts, 60-second cooldown.
+
+Errors: `403 INCORRECT_PASSWORD`, `403 ACCOUNT_LOCKED`, `422` (same as your current address), `400 INVALID_OTP`, `409 CONTACT_UNAVAILABLE`, `429 OTP_COOLDOWN`, `503`.
+
+#### `POST /api/v1/users/me/deactivate` (*sensitive*)
+
+```json
+{ "password": "…", "reason": "SWITCHING_PROVIDER" }
+```
+
+`reason` is optional, one of `NO_LONGER_NEEDED`, `SWITCHING_PROVIDER`, `PRIVACY_CONCERNS`, `TOO_EXPENSIVE`, `OTHER`. Free text isn't accepted, because the reason is kept in the audit log.
+
+**204**. On success:
+
+- the status becomes `DEACTIVATED`;
+- every wallet is closed;
+- every session ends, so all tokens stop working immediately;
+- a confirmation email is sent.
+
+Signing in afterwards gives `403 ACCOUNT_DISABLED`. Nothing is deleted, and your email, phone and handle stay reserved. Reactivation goes through support.
+
+| Error | When |
+|---|---|
+| `403 INCORRECT_PASSWORD` / `403 ACCOUNT_LOCKED` | Password check failed / too many failures |
+| `409 ACCOUNT_HAS_BALANCE` | A wallet still holds money (including amounts on hold) |
+| `409 ACCOUNT_HAS_PENDING_TRANSACTIONS` | A transaction to or from you is still pending or processing |
 
 *More endpoints are added per module.*

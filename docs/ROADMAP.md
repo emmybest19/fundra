@@ -52,6 +52,7 @@ Legend: `[x]` done · `[ ]` to do
 - [ ] Port the 49 migration checks from Stage 5 (30 constraints + 19 triggers) into integration tests
 - [ ] Integration test for the rate-limit Lua script on real Redis 8.8 (counting, expiry, TTL repair, concurrency)
 - [ ] Integration tests for idempotency on real PostgreSQL: all 10 scenarios, plus true concurrency (N parallel requests → one execution) and row-lock waits during takeover
+- [ ] Row-lock races on real PostgreSQL (PGlite serialises connections): concurrent preference PATCHes lose nothing; a name change racing a KYC submit; deactivation racing an incoming posting
 - [ ] CI check: `prisma migrate diff` between migrations and schema must be empty (no drift)
 
 ### Stage 7 — Auth ✅
@@ -62,7 +63,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] `authorize(permission)` middleware (RBAC) + `requireActiveAccount`; roles loaded from the database per request (grant/revoke immediate); verified on PostgreSQL 18.3
 
 ### Stage 8 — Users
-- [ ] Profile, contact info, preferences, status, deactivation
+- [x] Profile, contact info, preferences, status, deactivation: name locks at KYC submission, contact change via a code bound to the new address, password re-check for sensitive actions, deactivation (zero balance, nothing pending, wallets closed, sessions revoked); 54/54 checks on PostgreSQL 18.3
 - [ ] Change password while signed in (current + new; revoke other sessions, reissue tokens for this one)
 
 ### Stage 9 — KYC
@@ -75,7 +76,7 @@ Legend: `[x]` done · `[ ]` to do
 - [ ] Wallet status + balance endpoints
 
 ### Stage 11 — Ledger
-- [ ] `ledger.post()`: invariants, ordered row locks, balance check, entries, cached balances
+- [ ] `ledger.post()`: invariants, ordered row locks, balance check, entries, cached balances; reject `CLOSED`/`FROZEN` wallets under the wallet lock (deactivation relies on this)
 - [ ] Make `ledger_accounts.code/type/currency` immutable once created (trigger; found while testing the seed)
 - [ ] Translate database errors at the service boundary: `FN001` (append-only), `23514` `ledger_entries_balanced`, unique and FK violations; read the real SQLSTATE from `meta.driverAdapterError.cause.originalCode`
 - [ ] Holds (place / settle / release)

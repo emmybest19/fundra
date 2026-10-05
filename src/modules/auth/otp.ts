@@ -1,8 +1,13 @@
-// One-time codes (email/phone verification, password reset), stored in Redis as HMACs.
+// One-time codes (verification, password reset, contact changes), stored in Redis as HMACs.
 import { createHmac, randomInt } from 'node:crypto';
 import type { Redis } from 'ioredis';
+import { z } from 'zod';
 
-export type OtpPurpose = 'email_verification' | 'phone_verification' | 'password_reset';
+export type OtpPurpose =
+  'email_verification' | 'phone_verification' | 'password_reset' | 'email_change' | 'phone_change';
+
+/** A 6-digit code as typed by the user. */
+export const otpCode = z.string().regex(/^\d{6}$/, 'Must be the 6-digit code');
 
 export const OTP_LENGTH = 6;
 export const OTP_TTL_MS = 10 * 60 * 1_000;
@@ -132,8 +137,15 @@ export class OtpService {
     this.#secret = secret;
   }
 
-  /** Returns null while the resend cooldown for this user and purpose is active. */
-  async issue(purpose: OtpPurpose, userId: string): Promise<IssuedOtp | null> {
+  /**
+   * Returns null while the resend cooldown for this user and purpose is active.
+   *
+   * `target` binds the code to a value, e.g. the new email address in a contact change: the
+   * code then only checks against that same value, so a code sent to one address can never
+   * confirm a different one. Issuing again replaces the previous code (one pending code per
+   * user and purpose).
+   */
+  async issue(purpose: OtpPurpose, userId: string, target?: string): Promise<IssuedOtp | null> {
     if (
       !(await this.#store.acquireCooldown(
         `otp:cooldown:${purpose}:${userId}`,
@@ -147,16 +159,21 @@ export class OtpService {
       .padStart(OTP_LENGTH, '0');
     await this.#store.put(
       this.#key(purpose, userId),
-      this.#hash(purpose, userId, code),
+      this.#hash(purpose, userId, code, target),
       OTP_TTL_MS,
     );
     return { code };
   }
 
-  check(purpose: OtpPurpose, userId: string, code: string): Promise<OtpCheckResult> {
+  check(
+    purpose: OtpPurpose,
+    userId: string,
+    code: string,
+    target?: string,
+  ): Promise<OtpCheckResult> {
     return this.#store.check(
       this.#key(purpose, userId),
-      this.#hash(purpose, userId, code),
+      this.#hash(purpose, userId, code, target),
       OTP_MAX_ATTEMPTS,
     );
   }
@@ -165,8 +182,10 @@ export class OtpService {
     return `otp:${purpose}:${userId}`;
   }
 
-  /** Bound to purpose and user, so a code issued for one can never verify the other. */
-  #hash(purpose: OtpPurpose, userId: string, code: string): string {
-    return createHmac('sha256', this.#secret).update(`${purpose}:${userId}:${code}`).digest('hex');
+  /** Bound to purpose, user and target, so a code issued for one never verifies another. */
+  #hash(purpose: OtpPurpose, userId: string, code: string, target?: string): string {
+    const subject =
+      target === undefined ? `${purpose}:${userId}` : `${purpose}:${userId}:${target}`;
+    return createHmac('sha256', this.#secret).update(`${subject}:${code}`).digest('hex');
   }
 }

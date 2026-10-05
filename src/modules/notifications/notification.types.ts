@@ -1,4 +1,5 @@
 // Notification types and channels.
+import type { OtpPurpose } from '../auth/otp.ts';
 
 export type MessageChannel = 'EMAIL' | 'SMS';
 
@@ -10,14 +11,21 @@ export type OutgoingMessage =
       template: 'otp';
       data: {
         code: string;
-        purpose: 'email_verification' | 'phone_verification' | 'password_reset';
+        purpose: OtpPurpose;
       };
     }
   | {
       channel: MessageChannel;
       to: string;
-      template: 'password_changed';
+      template: 'password_changed' | 'account_deactivated';
       data: Record<string, never>;
+    }
+  | {
+      channel: MessageChannel;
+      /** The **old** address: the alert must reach the owner, not whoever made the change. */
+      to: string;
+      template: 'contact_changed';
+      data: { changed: 'email' | 'phone' };
     };
 
 /**

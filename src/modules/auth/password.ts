@@ -34,6 +34,12 @@ export const password = z
     'Must not be mostly spaces',
   );
 
+/**
+ * An existing password being presented (login, re-authentication), not a new one: older
+ * accounts may predate the current policy, so only the hashing cost is bounded.
+ */
+export const currentPassword = z.string().min(1, 'Required').max(PASSWORD_MAX_LENGTH);
+
 /** True if the password doesn't contain the user's handle or the name part of their email. */
 export function passwordIsNotPersonal(
   value: string,

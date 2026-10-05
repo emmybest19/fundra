@@ -51,6 +51,16 @@ describe('OtpService', () => {
     expect(await otp.check('email_verification', 'u1', code)).toBe('ok');
   });
 
+  it('binds a code to its target: a code sent to one address never confirms another', async () => {
+    const { otp } = setup();
+    const issued = await otp.issue('email_change', 'u1', 'new@fundra.dev');
+    const code = issued?.code ?? '';
+
+    expect(await otp.check('email_change', 'u1', code, 'other@fundra.dev')).toBe('mismatch');
+    expect(await otp.check('email_change', 'u1', code)).toBe('mismatch');
+    expect(await otp.check('email_change', 'u1', code, 'new@fundra.dev')).toBe('ok');
+  });
+
   it(`destroys the code after ${String(OTP_MAX_ATTEMPTS)} wrong attempts, even if the next guess is right`, async () => {
     const { otp } = setup();
     const code = await issueCode(otp);
