@@ -114,7 +114,8 @@ docs/              project definition, architecture, case study, API, security
 | Database readiness check + connection close on shutdown | Done (Stage 5 complete) |
 | Shared infrastructure: Redis, rate limiting, validation, audit, idempotency, outbox | Done (Stage 6); the Testcontainers integration suite is deferred until Docker is installed |
 | Users (Stage 8): profile, contact change, preferences, status lifecycle, deactivation, password change | Done |
-| KYC (Stage 9): `KycProvider` + mock, tiers 1–3, documents, review lifecycle | In progress (items 1–2 of 3 done; tier limits next) |
+| KYC (Stage 9): `KycProvider` + mock, tiers 1–3, documents, review lifecycle, tier limits | Done. Reviewer endpoints arrive with Admin (Stage 19) |
+| Wallets (Stage 10) | Next |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).

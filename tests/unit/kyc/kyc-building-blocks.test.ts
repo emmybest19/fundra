@@ -173,6 +173,7 @@ describe('missingTier3Documents', () => {
 });
 
 describe('toKycOverview', () => {
+  const NO_LIMITS = { current: null, next: null };
   const base = {
     id: PROFILE,
     userId: OTHER_PROFILE,
@@ -202,7 +203,7 @@ describe('toKycOverview', () => {
   };
 
   it('says which number is on file, never the number or its hash', () => {
-    const overview = toKycOverview(base);
+    const overview = toKycOverview(base, NO_LIMITS);
     const json = JSON.stringify(overview);
 
     expect(overview.identityNumber).toEqual({ type: 'BVN' });
@@ -211,10 +212,10 @@ describe('toKycOverview', () => {
   });
 
   it('points at the next tier and what it needs, and nothing after Tier 3', () => {
-    expect(toKycOverview(base).next).toEqual({
+    expect(toKycOverview(base, NO_LIMITS).next).toEqual({
       tier: 3,
       requires: ['idDocument', 'utilityBill', 'address'],
     });
-    expect(toKycOverview({ ...base, tier: 3 }).next).toBeNull();
+    expect(toKycOverview({ ...base, tier: 3 }, NO_LIMITS).next).toBeNull();
   });
 });

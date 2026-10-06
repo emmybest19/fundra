@@ -66,10 +66,10 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Profile, contact info, preferences, status, deactivation: name locks at KYC submission, contact change via a code bound to the new address, password re-check for sensitive actions, deactivation (zero balance, nothing pending, wallets closed, sessions revoked); 54/54 checks on PostgreSQL 18.3
 - [x] Change password while signed in (`POST /users/me/password`): current password re-checked with the shared lockout; every session revoked and a fresh one opened for this device, so all old tokens die; 23/23 checks on PostgreSQL 18.3
 
-### Stage 9 — KYC
+### Stage 9 — KYC ✅
 - [x] `KycProvider` interface + `MockKycProvider`: identity-number check (verdict only, shared name-matching rule), async document check, magic-number mock; 18 unit tests
 - [x] KYC profile, documents, status lifecycle: Tier 1 (DOB, 18+) and Tier 2 (BVN/NIN via provider, encrypted + HMAC, generic rejection) decided at once; Tier 3 documents (magic-byte checked, local storage) + address → review (open → approve/reject, provider must accept, no self-review); Stage 8 name-lock fix; 59/59 checks on PostgreSQL 18.3
-- [ ] Tier → limits mapping
+- [x] Tier → limits mapping: `findTierLimits` (fails closed on a missing row), `checkOutflow` (amount + fee, Lagos day) / `checkInflow` (refunds and reversals exempt), limit errors that never reveal a recipient's limits, limits in `GET /kyc`; 9 checks on PostgreSQL 18.3. Applied by Stages 13–14
 
 ### Stage 10 — Wallets
 - [ ] Wallet created on KYC approval

@@ -6,6 +6,7 @@ import type {
   KycStatus,
 } from '../../generated/prisma/client.ts';
 import type { IdentityNumberType } from './providers/kyc-provider.ts';
+import type { LimitsByCurrency } from './tier-limits.ts';
 
 /** Any one of these proves identity for Tier 3. */
 export const ID_DOCUMENT_TYPES: readonly KycDocumentType[] = [
@@ -60,6 +61,8 @@ export interface KycOverview {
   documents: KycDocumentView[];
   /** The tier the user can apply for next and what it needs; null at Tier 3. */
   next: { tier: number; requires: readonly string[] } | null;
+  /** D3 limits now and after upgrading: `current` null at tier 0, `next` null at Tier 3. */
+  limits: { current: LimitsByCurrency | null; next: LimitsByCurrency | null };
 }
 
 export const toDocumentView = (document: KycDocument): KycDocumentView => ({
@@ -71,7 +74,10 @@ export const toDocumentView = (document: KycDocument): KycDocumentView => ({
   uploadedAt: document.uploadedAt,
 });
 
-export function toKycOverview(profile: KycProfile & { documents: KycDocument[] }): KycOverview {
+export function toKycOverview(
+  profile: KycProfile & { documents: KycDocument[] },
+  limits: KycOverview['limits'],
+): KycOverview {
   const nextTier = profile.tier + 1;
   return {
     tier: profile.tier,
@@ -102,5 +108,6 @@ export function toKycOverview(profile: KycProfile & { documents: KycDocument[] }
       nextTier === 1 || nextTier === 2 || nextTier === 3
         ? { tier: nextTier, requires: NEXT_TIER_REQUIRES[nextTier] }
         : null,
+    limits,
   };
 }

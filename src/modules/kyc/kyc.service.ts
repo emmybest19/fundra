@@ -10,6 +10,7 @@ import {
   ValidationError,
 } from '../../common/errors/index.ts';
 import { writeOutboxEvent } from '../../common/outbox/outbox.writer.ts';
+import { lagosDate } from '../../common/utils/business-day.ts';
 import type {
   KycDocument,
   KycDocumentType,
@@ -39,6 +40,7 @@ import {
   type IdentitySubject,
   type KycProvider,
 } from './providers/kyc-provider.ts';
+import { tierLimitsView } from './tier-limits.ts';
 
 export const MINIMUM_AGE = 18;
 
@@ -68,15 +70,10 @@ export interface KycReviewCase {
   providerCheck: DocumentCheckResult | null;
 }
 
-/** "Today" for age rules, as a `YYYY-MM-DD` Lagos calendar date (UTC+1, no daylight saving). */
-function lagosToday(now: number): string {
-  return new Date(now + 60 * 60 * 1_000).toISOString().slice(0, 10);
-}
-
 /** True once the 18th birthday has started. 29 February birthdays count from 1 March. */
 export function isAdult(dateOfBirth: string, now: number): boolean {
   const year = Number(dateOfBirth.slice(0, 4));
-  return `${String(year + MINIMUM_AGE)}${dateOfBirth.slice(4)}` <= lagosToday(now);
+  return `${String(year + MINIMUM_AGE)}${dateOfBirth.slice(4)}` <= lagosDate(now);
 }
 
 function isUniqueViolation(err: unknown): boolean {
@@ -130,12 +127,7 @@ export class KycService {
   }
 
   async getOverview(userId: string): Promise<KycOverview> {
-    return toKycOverview(
-      await this.#db.kycProfile.findUniqueOrThrow({
-        where: { userId },
-        include: PROFILE_WITH_DOCUMENTS,
-      }),
-    );
+    return this.#overview(this.#db, { userId });
   }
 
   /**
@@ -181,7 +173,7 @@ export class KycService {
         context,
         metadata: { tier: 1, decidedBy: 'AUTOMATIC' },
       });
-      return this.#overview(tx, profile.id);
+      return this.#overview(tx, { id: profile.id });
     });
   }
 
@@ -477,7 +469,7 @@ export class KycService {
         context,
         metadata: { tier: 3, provider: current.provider, providerStatus: check.status },
       });
-      return this.#overview(tx, profileId);
+      return this.#overview(tx, { id: profileId });
     });
   }
 
@@ -515,7 +507,7 @@ export class KycService {
         // The reason is the compliance record of the decision; reviewers write it for the user.
         metadata: { tier: 3, reason },
       });
-      return this.#overview(tx, profileId);
+      return this.#overview(tx, { id: profileId });
     });
   }
 
@@ -589,7 +581,7 @@ export class KycService {
                 }),
           },
         });
-        return this.#overview(tx, current.id);
+        return this.#overview(tx, { id: current.id });
       });
     } catch (err) {
       // Another account stored the same number between our check and our commit.
@@ -646,14 +638,11 @@ export class KycService {
   }
 
   async #reviewCase(profileId: string): Promise<KycReviewCase> {
-    const profile = await this.#db.kycProfile.findUniqueOrThrow({
-      where: { id: profileId },
-      include: PROFILE_WITH_DOCUMENTS,
-    });
+    const profile = await this.#db.kycProfile.findUniqueOrThrow({ where: { id: profileId } });
     return {
       profileId,
       userId: profile.userId,
-      kyc: toKycOverview(profile),
+      kyc: await this.#overview(this.#db, { id: profileId }),
       providerCheck:
         profile.providerReference === null
           ? null
@@ -677,13 +666,19 @@ export class KycService {
     return tx.kycProfile.findUniqueOrThrow({ where });
   }
 
-  async #overview(tx: Prisma.TransactionClient, profileId: string): Promise<KycOverview> {
-    return toKycOverview(
-      await tx.kycProfile.findUniqueOrThrow({
-        where: { id: profileId },
-        include: PROFILE_WITH_DOCUMENTS,
-      }),
-    );
+  /** The user-facing view, with the D3 limits for the current and next tier. */
+  async #overview(
+    db: Pick<PrismaClient, 'kycProfile' | 'tierLimit'>,
+    where: { userId: string } | { id: string },
+  ): Promise<KycOverview> {
+    const profile = await db.kycProfile.findUniqueOrThrow({
+      where,
+      include: PROFILE_WITH_DOCUMENTS,
+    });
+    return toKycOverview(profile, {
+      current: await tierLimitsView(db, profile.tier),
+      next: await tierLimitsView(db, profile.tier + 1),
+    });
   }
 
   /** Audit row + `kyc.status_changed` outbox event, in the decision's transaction. */

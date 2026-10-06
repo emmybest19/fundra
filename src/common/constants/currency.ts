@@ -12,3 +12,22 @@ export const MINOR_UNITS: Readonly<Record<Currency, bigint>> = {
 export function toMinor(major: number | bigint, currency: Currency): bigint {
   return BigInt(major) * MINOR_UNITS[currency];
 }
+
+const SYMBOLS: Readonly<Record<Currency, string>> = { NGN: '₦' };
+
+/**
+ * For messages shown to people, never for storage or arithmetic: 5_000_000n → `₦50,000.00`.
+ * Pure bigint maths, so no float ever touches the amount.
+ */
+export function formatMinor(amount: bigint, currency: Currency): string {
+  const unit = MINOR_UNITS[currency];
+  const sign = amount < 0n ? '-' : '';
+  const abs = amount < 0n ? -amount : amount;
+  const whole = (abs / unit).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const fraction = (abs % unit).toString().padStart(unit.toString().length - 1, '0');
+  return `${sign}${SYMBOLS[currency]}${whole}.${fraction}`;
+}
+
+export function isCurrency(value: string): value is Currency {
+  return (CURRENCIES as readonly string[]).includes(value);
+}

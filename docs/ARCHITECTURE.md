@@ -302,7 +302,7 @@ Everything under `/api/v1/users/me` acts on the signed-in user. Endpoints are li
 
 Verified over HTTP on PostgreSQL 18.3 (PGlite): 54/54 checks for item 1 and 23/23 for password change, plus six deliberate code breaks, each caught (no address binding, code sent to a taken address, no KYC name lock, no balance check, other sessions left alive after a password change, no "different from current" rule). PGlite serves every connection from a single backend, so the row-lock races (preferences, name lock, deactivation against a posting) wait for the real-PostgreSQL integration suite.
 
-### 6.2 KYC — *Built (tier limits are Stage 9 item 3)*
+### 6.2 KYC — *Built*
 
 KYC verification goes through the `KycProvider` interface ([kyc-provider.ts](../src/modules/kyc/providers/kyc-provider.ts)). The KYC service depends only on the interface. `MockKycProvider` implements it now; a sandbox provider later needs only a new adapter.
 
@@ -332,6 +332,19 @@ Verified by unit tests (18): every magic number, the matching rule, the document
 | Review | Service methods now; admin endpoints in Stage 19. A reviewer **opens** a case (`PENDING → IN_REVIEW`, assigned to them, the provider's document result attached), then approves or rejects. Approval needs the provider to have **accepted** the documents (`KYC_PROVIDER_CHECK_INCOMPLETE` otherwise). A rejection carries a reason shown to the user. Nobody reviews their own KYC (`KYC_SELF_REVIEW`), whatever their role |
 | Name lock (Stage 8 fix) | The lock used to follow `status` only, so a user approved at Tier 1 and then rejected at Tier 2 could rename themselves. It now follows `tier > 0`, or a submission under review |
 | Records | Each decision writes an audit row (from/to status, tier, provider, cause; never a number, name or address) and a `kyc.status_changed` outbox event (`userId`, `status`, `tier`) in the same transaction. Stage 10 creates the wallet from that event |
+
+**Tier limits** (D3; [tier-limits.ts](../src/modules/kyc/tier-limits.ts)). The lookup and the rules are here; money movement applies them inside its own transaction, under the wallet lock, with figures it read there (transfers in Stage 13, deposits and withdrawals in Stage 14).
+
+| Concern | Design |
+|---|---|
+| Lookup | `findTierLimits(db, tier, currency)`: one primary-key read per transaction, no cache, so an admin's change applies to the next one. Tier 0 has no limits because it can't move money. A missing row for a verified tier **throws**: it never means unlimited; only an explicit `max_balance = NULL` does |
+| Outflow | `checkOutflow`: **amount + fee** (what actually leaves the wallet) against the per-transaction limit, then against the daily limit with today's total. Today = the Africa/Lagos day ([business-day.ts](../src/common/utils/business-day.ts): 23:00–23:00 UTC, half-open). The total counts `TRANSFER`, `WITHDRAWAL` and `PAYMENT` in `PENDING`, `PROCESSING` or `COMPLETED`; failed, cancelled and reversed ones gave the money back. Exactly at a limit is allowed |
+| Inflow | `checkInflow`: balance after the credit against `max_balance`, for deposits and incoming transfers. **Refunds and reversals are exempt**: returning a user's own money must never fail |
+| Errors | The sender's own limits are theirs to see: the message names the limit and what's left today (`LIMIT_PER_TRANSACTION_EXCEEDED`, `LIMIT_DAILY_OUTFLOW_EXCEEDED`, `LIMIT_MAX_BALANCE_EXCEEDED` for a deposit). A transfer refused by the **recipient's** maximum is `RECIPIENT_CANNOT_RECEIVE`, revealing nothing about their tier, limit or balance |
+| Display | `GET /kyc` → `limits.current` / `limits.next` per currency, kobo strings (D1) |
+| No tier race | Tiers only rise (downgrades are out of scope), so an upgrade landing mid-transfer can only loosen a limit |
+
+Limits are verified by 25 unit tests (boundaries to the kobo, fees, Lagos midnight, refunds, fail-closed lookup) and 9 checks on PostgreSQL 18.3 (seeded values per tier, an edit applying at once, the per-transaction-within-daily CHECK, a deleted row failing closed). Four deliberate code breaks were each caught: a missing row read as unlimited, a UTC day boundary, the fee left out, refunds not exempt.
 
 Verified over HTTP on PostgreSQL 18.3 (PGlite): 59/59 checks, plus five deliberate code breaks, each caught by the check written for it: no HMAC pre-check, no magic-byte check, the old name-lock rule, no self-review guard, approval without provider acceptance. Two things wait for real PostgreSQL: the row-lock races, and the HMAC unique-index backstop. On PGlite's socket server, the first query after a failed transaction receives the previous query's response; a minimal Prisma-only script reproduces this, so it's the harness, not the KYC code.
 

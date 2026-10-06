@@ -83,6 +83,10 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 409 | `CONTACT_UNAVAILABLE` | The new email/phone was taken by another account before you confirmed |
 | 409 | `ACCOUNT_HAS_BALANCE` | Deactivation needs every wallet at zero; withdraw or transfer first |
 | 409 | `ACCOUNT_HAS_PENDING_TRANSACTIONS` | Deactivation waits until no transaction is pending or processing |
+| 422 | `LIMIT_PER_TRANSACTION_EXCEEDED` | Amount + fee is above your tier's per-transaction limit (money movement, from Stage 13) |
+| 422 | `LIMIT_DAILY_OUTFLOW_EXCEEDED` | Would take today's outgoing total (Lagos day, fees included) over your tier's daily limit; the message says how much is left |
+| 422 | `LIMIT_MAX_BALANCE_EXCEEDED` | A deposit would take your balance over your tier's maximum |
+| 422 | `RECIPIENT_CANNOT_RECEIVE` | The recipient can't receive this amount; deliberately says nothing about their tier, limit or balance |
 | 409 | `KYC_TIER_ORDER` | Tiers are taken in order; complete the previous tier first |
 | 409 | `KYC_TIER_ALREADY_APPROVED` | You're already verified at this tier or higher |
 | 409 | `KYC_UNDER_REVIEW` | A Tier 3 submission is being reviewed; documents and address can't change until it's decided |
@@ -447,7 +451,11 @@ Your **legal name locks** when Tier 1 is approved: it's what KYC verifies.
       "documents": [
         { "id": "…", "type": "PASSPORT", "mimeType": "image/png", "sizeBytes": 48211, "status": "PENDING", "uploadedAt": "…" }
       ],
-      "next": { "tier": 3, "requires": ["idDocument", "utilityBill", "address"] }
+      "next": { "tier": 3, "requires": ["idDocument", "utilityBill", "address"] },
+      "limits": {
+        "current": { "NGN": { "perTransaction": "10000000", "dailyOutflow": "20000000", "maxBalance": "50000000" } },
+        "next":    { "NGN": { "perTransaction": "500000000", "dailyOutflow": "500000000", "maxBalance": null } }
+      }
     }
   }
 }
@@ -456,6 +464,7 @@ Your **legal name locks** when Tier 1 is approved: it's what KYC verifies.
 - `status` is the state of your **latest** request: `NOT_STARTED`, `PENDING` (queued for review), `IN_REVIEW`, `APPROVED` or `REJECTED`. `tier` is what's approved, and a rejection never lowers it.
 - `identityNumber` says which number is on file, never the number itself.
 - `next` is `null` at Tier 3.
+- `limits` shows your limits now and after upgrading, per currency, in kobo strings: `perTransaction` and `dailyOutflow` (both count amount + fee; the day is the Lagos calendar day) and `maxBalance` (`null` = unlimited). `current` is `null` at tier 0, where no money can move; `next` is `null` at Tier 3. Admins can change limits, and a change applies to the next transaction.
 
 #### `POST /api/v1/kyc/tier-1`
 
