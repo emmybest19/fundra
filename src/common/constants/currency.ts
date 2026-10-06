@@ -3,6 +3,9 @@
 export const CURRENCIES = ['NGN'] as const;
 export type Currency = (typeof CURRENCIES)[number];
 
+/** The currency a new user's first wallet is in (D3: created with Tier 1). */
+export const DEFAULT_CURRENCY: Currency = 'NGN';
+
 /** Minor units per major unit (kobo per naira). */
 export const MINOR_UNITS: Readonly<Record<Currency, bigint>> = {
   NGN: 100n,

@@ -1,6 +1,7 @@
 // Business logic for kyc: the three tiers, document uploads and the review decisions
 // (docs/ARCHITECTURE.md §6.2). Every status change goes through assertKycTransition.
 import { createHash, randomUUID } from 'node:crypto';
+import { DEFAULT_CURRENCY } from '../../common/constants/currency.ts';
 import {
   ConflictError,
   ErrorCode,
@@ -41,6 +42,7 @@ import {
   type KycProvider,
 } from './providers/kyc-provider.ts';
 import { tierLimitsView } from './tier-limits.ts';
+import { createWallet } from '../wallets/wallet.service.ts';
 
 export const MINIMUM_AGE = 18;
 
@@ -132,7 +134,8 @@ export class KycService {
 
   /**
    * Tier 1: name (already on the account), verified contacts (the route requires an ACTIVE
-   * account) and a date of birth showing the user is 18+. Approved at once; the name locks.
+   * account) and a date of birth showing the user is 18+. Approved at once; the name locks and
+   * the NGN wallet is created.
    */
   async submitTier1(
     userId: string,
@@ -172,6 +175,14 @@ export class KycService {
         tier: 1,
         context,
         metadata: { tier: 1, decidedBy: 'AUTOMATIC' },
+      });
+      // D3: the wallet comes with Tier 1, in this same transaction, so an approved user is
+      // never left without one.
+      await createWallet(tx, {
+        userId,
+        currency: DEFAULT_CURRENCY,
+        actor: { type: 'USER', userId },
+        context,
       });
       return this.#overview(tx, { id: profile.id });
     });

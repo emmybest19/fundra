@@ -72,7 +72,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Tier → limits mapping: `findTierLimits` (fails closed on a missing row), `checkOutflow` (amount + fee, Lagos day) / `checkInflow` (refunds and reversals exempt), limit errors that never reveal a recipient's limits, limits in `GET /kyc`; 9 checks on PostgreSQL 18.3. Applied by Stages 13–14
 
 ### Stage 10 — Wallets
-- [ ] Wallet created on KYC approval
+- [x] Wallet created on KYC approval: NGN wallet + `WALLET:<id>` LIABILITY ledger account in the Tier 1 approval transaction (atomic, proven by DB fault injection); idempotent; account number = 9 random digits + Damm check digit; 15/15 checks on PostgreSQL 18.3
 - [ ] Wallet status + balance endpoints
 
 ### Stage 11 — Ledger

@@ -348,6 +348,17 @@ Limits are verified by 25 unit tests (boundaries to the kobo, fees, Lagos midnig
 
 Verified over HTTP on PostgreSQL 18.3 (PGlite): 59/59 checks, plus five deliberate code breaks, each caught by the check written for it: no HMAC pre-check, no magic-byte check, the old name-lock rule, no self-review guard, approval without provider acceptance. Two things wait for real PostgreSQL: the row-lock races, and the HMAC unique-index backstop. On PGlite's socket server, the first query after a failed transaction receives the previous query's response; a minimal Prisma-only script reproduces this, so it's the harness, not the KYC code.
 
+### 6.3 Wallets — *Partly built (creation)*
+
+| Concern | Design |
+|---|---|
+| When | With **Tier 1** approval (D3), inside `submitTier1`'s transaction ([wallet.service.ts](../src/modules/wallets/wallet.service.ts) `createWallet(tx, …)`). Approval and wallet commit together, so an approved user is never without a wallet, and nothing waits for the outbox relay (Stage 16). `kyc.status_changed` still goes to the outbox for notifications |
+| What | One NGN wallet (`DEFAULT_CURRENCY`) and its own ledger account: `WALLET:<walletId>`, `LIABILITY` (a user's balance is money Fundra owes them), same currency, enforced by the composite foreign key. The ID comes from PostgreSQL first (`SELECT uuidv7()`) because the ledger code contains it. `ACTIVE`, both balances 0: only the ledger (Stage 11) changes them. Audit `wallet.created` with the wallet ID only |
+| Once | An existing (user, currency) wallet is returned unchanged; the unique index refuses a second one even if the app check were missing (a deliberate break proved it). Tier 2/3 approvals don't create another |
+| Account number | D2: 9 random digits (`crypto.randomInt`, not sequential, so one number reveals nothing about the next) + a **Damm** check digit ([account-number.ts](../src/modules/wallets/account-number.ts)). Damm catches every single-digit typo and every neighbouring swap (Luhn misses `09`↔`90`); `isValidAccountNumber` lets transfers (Stage 13) refuse a typo before any lookup. A taken number is skipped (up to 5 tries; 10⁹ possibilities); the unique index is the backstop for a simultaneous clash, which fails that approval cleanly. Never written to logs or audit records |
+
+Verified on PostgreSQL 18.3 (PGlite): 15/15 checks, including atomicity proven by a fault injected **in the database** (a test-only trigger failing one user's wallet insert: the request is a 500, and the approval, audit row, outbox event and ledger account are all rolled back), the composite foreign key refusing an NGN wallet on a USD ledger account, and Stage 8 deactivation closing the new wallet. Three deliberate code breaks were each caught: the wallet created after the approval commits, a random check digit, no existing-wallet check. Unit tests check the Damm digit exhaustively: every single-digit change and every neighbour swap on 200 random numbers.
+
 ---
 
 ## 7. Financial core — *Designed*

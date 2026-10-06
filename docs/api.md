@@ -472,7 +472,7 @@ Your **legal name locks** when Tier 1 is approved: it's what KYC verifies.
 { "dateOfBirth": "1995-04-12" }
 ```
 
-**200** with the `kyc` object (Tier 1, `APPROVED`). Errors: `422` (not a real date, or under 18), `409 KYC_TIER_ALREADY_APPROVED`.
+**200** with the `kyc` object (Tier 1, `APPROVED`). Your NGN wallet is created in the same step, with a 10-digit account number for receiving money. Errors: `422` (not a real date, or under 18), `409 KYC_TIER_ALREADY_APPROVED`.
 
 #### `POST /api/v1/kyc/tier-2`
 
