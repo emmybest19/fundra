@@ -115,7 +115,8 @@ docs/              project definition, architecture, case study, API, security
 | Shared infrastructure: Redis, rate limiting, validation, audit, idempotency, outbox | Done (Stage 6); the Testcontainers integration suite is deferred until Docker is installed |
 | Users (Stage 8): profile, contact change, preferences, status lifecycle, deactivation, password change | Done |
 | KYC (Stage 9): `KycProvider` + mock, tiers 1–3, documents, review lifecycle, tier limits | Done. Reviewer endpoints arrive with Admin (Stage 19) |
-| Wallets (Stage 10): created with Tier 1 (own ledger account, check-digit account number) | In progress (item 1 of 2 done; status and balance endpoints next) |
+| Wallets (Stage 10): created with Tier 1 (own ledger account, check-digit account number), status lifecycle, balance endpoints | Done. Freeze/unfreeze endpoints arrive with Admin (Stage 19) |
+| Ledger (Stage 11) | Next |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).

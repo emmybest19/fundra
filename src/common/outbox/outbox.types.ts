@@ -66,6 +66,12 @@ export interface OutboxEventPayloads {
     userId: string;
     walletsClosed: number;
   };
+  /** Never the reason: a freeze reason stays in the audit log (no tipping off). */
+  'wallet.status_changed': {
+    userId: string;
+    walletId: string;
+    status: 'ACTIVE' | 'FROZEN' | 'CLOSED';
+  };
 }
 
 export type OutboxEventType = keyof OutboxEventPayloads;

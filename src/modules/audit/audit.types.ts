@@ -40,6 +40,8 @@ export const AUDIT_ACTIONS = [
   'wallet.created',
   'wallet.frozen',
   'wallet.unfrozen',
+  'wallet.closed',
+  'wallet.reopened',
   // Money movement (Stages 13–14)
   'transfer.completed',
   'deposit.completed',

@@ -87,6 +87,7 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 422 | `LIMIT_DAILY_OUTFLOW_EXCEEDED` | Would take today's outgoing total (Lagos day, fees included) over your tier's daily limit; the message says how much is left |
 | 422 | `LIMIT_MAX_BALANCE_EXCEEDED` | A deposit would take your balance over your tier's maximum |
 | 422 | `RECIPIENT_CANNOT_RECEIVE` | The recipient can't receive this amount; deliberately says nothing about their tier, limit or balance |
+| 403 | `WALLET_SELF_ACTION` | Admins can't change the status of their own wallet |
 | 409 | `KYC_TIER_ORDER` | Tiers are taken in order; complete the previous tier first |
 | 409 | `KYC_TIER_ALREADY_APPROVED` | You're already verified at this tier or higher |
 | 409 | `KYC_UNDER_REVIEW` | A Tier 3 submission is being reviewed; documents and address can't change until it's decided |
@@ -529,5 +530,41 @@ Errors: `415 UNSUPPORTED_MEDIA_TYPE`, `413 PAYLOAD_TOO_LARGE`, `422` (empty file
 **202** with the `kyc` object (`status: "PENDING"`, `requestedTier: 3`). A reviewer decides. While it's `PENDING` or `IN_REVIEW`, documents and the address can't change (`409 KYC_UNDER_REVIEW`). If it's rejected, `rejectionReason` says what to fix: upload again and resubmit.
 
 Errors: `422` (missing documents are listed under `documents`), `409 KYC_TIER_ORDER`, `409 KYC_TIER_ALREADY_APPROVED`, `409 KYC_UNDER_REVIEW`.
+
+### Wallets
+
+Your NGN wallet is created when Tier 1 is approved. Both routes need authentication, and responses are never cached (`Cache-Control: no-store`).
+
+#### `GET /api/v1/wallets`
+
+```json
+{
+  "data": {
+    "wallets": [
+      {
+        "id": "…", "currency": "NGN", "accountNumber": "0123456789", "status": "ACTIVE",
+        "balance": { "ledger": "1500000", "available": "1200000", "onHold": "300000" },
+        "createdAt": "…"
+      }
+    ]
+  }
+}
+```
+
+An empty list before Tier 1.
+
+- `balance` is in kobo strings. `available` is what you can spend; `onHold` is reserved for something in progress (e.g. a pending withdrawal); `ledger = available + onHold`.
+- `accountNumber` is for receiving money. It has a check digit, so a mistyped number is rejected rather than reaching someone else.
+- `status`:
+
+| Status | Meaning |
+|---|---|
+| `ACTIVE` | Normal |
+| `FROZEN` | Temporarily restricted: no money in or out. Contact support |
+| `CLOSED` | The account was deactivated |
+
+#### `GET /api/v1/wallets/:id`
+
+**200** with `{ "data": { "wallet": { … } } }`, the same shape as above. A wallet that doesn't exist **or isn't yours** is `404 NOT_FOUND`; a malformed ID is `422`.
 
 *More endpoints are added per module.*

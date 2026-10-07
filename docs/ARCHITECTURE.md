@@ -348,7 +348,7 @@ Limits are verified by 25 unit tests (boundaries to the kobo, fees, Lagos midnig
 
 Verified over HTTP on PostgreSQL 18.3 (PGlite): 59/59 checks, plus five deliberate code breaks, each caught by the check written for it: no HMAC pre-check, no magic-byte check, the old name-lock rule, no self-review guard, approval without provider acceptance. Two things wait for real PostgreSQL: the row-lock races, and the HMAC unique-index backstop. On PGlite's socket server, the first query after a failed transaction receives the previous query's response; a minimal Prisma-only script reproduces this, so it's the harness, not the KYC code.
 
-### 6.3 Wallets — *Partly built (creation)*
+### 6.3 Wallets — *Built*
 
 | Concern | Design |
 |---|---|
@@ -358,6 +358,19 @@ Verified over HTTP on PostgreSQL 18.3 (PGlite): 59/59 checks, plus five delibera
 | Account number | D2: 9 random digits (`crypto.randomInt`, not sequential, so one number reveals nothing about the next) + a **Damm** check digit ([account-number.ts](../src/modules/wallets/account-number.ts)). Damm catches every single-digit typo and every neighbouring swap (Luhn misses `09`↔`90`); `isValidAccountNumber` lets transfers (Stage 13) refuse a typo before any lookup. A taken number is skipped (up to 5 tries; 10⁹ possibilities); the unique index is the backstop for a simultaneous clash, which fails that approval cleanly. Never written to logs or audit records |
 
 Verified on PostgreSQL 18.3 (PGlite): 15/15 checks, including atomicity proven by a fault injected **in the database** (a test-only trigger failing one user's wallet insert: the request is a 500, and the approval, audit row, outbox event and ledger account are all rolled back), the composite foreign key refusing an NGN wallet on a USD ledger account, and Stage 8 deactivation closing the new wallet. Three deliberate code breaks were each caught: the wallet created after the approval commits, a random check digit, no existing-wallet check. Unit tests check the Damm digit exhaustively: every single-digit change and every neighbour swap on 200 random numbers.
+
+
+**Reading and status.** Endpoints are listed in [api.md](api.md#wallets).
+
+| Concern | Design |
+|---|---|
+| Reading | `GET /wallets` and `GET /wallets/:id`, own wallets only. The query is scoped to `{ id, userId }`, so someone else's wallet is a **404 identical to a missing one** (no IDOR probing). Balances are the cached columns, kept in step with the ledger inside each posting's transaction (Stage 11) and reconciled in Stage 20; `onHold = ledger − available`. Kobo strings, `Cache-Control: no-store` |
+| Lifecycle | One table ([wallet-status.ts](../src/modules/wallets/wallet-status.ts)): `ACTIVE ⇄ FROZEN`, `ACTIVE/FROZEN → CLOSED`, `CLOSED → ACTIVE` only through `reopen` after the account is reactivated (one wallet per user and currency, so a reactivated user needs theirs back). `changeWalletStatus` is the only way a status changes: the caller holds the row lock, and it writes the audit row and, optionally, the outbox event. Deactivation (Stage 8) now closes wallets through it too |
+| FROZEN | A compliance or fraud hold: **no money in or out except reversals and refunds**, enforced by the ledger under the wallet lock (Stage 11). Incoming deposits to a frozen wallet are Stage 14's concern (e.g. parked in `SUSPENSE`) |
+| Admin actions | `freeze` / `unfreeze` (reason required, 1–500 characters) and `reopen` are service methods; endpoints arrive in Stage 19 behind `wallets:freeze`. Lock order is user then wallet, the same as deactivation, so the two can't deadlock. Nobody changes their own wallet's status (`WALLET_SELF_ACTION`) |
+| No tipping off | A freeze reason goes to the audit log **only**: never into the API response or the `wallet.status_changed` event. The owner sees `FROZEN` and is told to contact support |
+
+Verified on PostgreSQL 18.3 (PGlite): 26 checks, plus the item 1 suite still passing after the deactivation change. Three deliberate code breaks were each caught: the ownership filter removed, the reason put in the event, the transition table bypassed. In that last break, `reopen`'s own guard still held for `CLOSED`.
 
 ---
 

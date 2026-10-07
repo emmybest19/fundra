@@ -246,7 +246,7 @@ Unique `(id, currency)`, the target of the composite foreign keys below.
 | `currency` | char(3) | |
 | `account_number` | char(10), unique | D2: 9 random digits + a Damm check digit (catches every single-digit typo and neighbouring swap); `CHECK account_number ~ '^[0-9]{10}$'` |
 | `ledger_account_id` | uuid, unique | Composite FK (`ledger_account_id`, `currency`) → ledger_accounts (`id`, `currency`), so the wallet and its ledger account can't disagree on currency |
-| `status` | `wallet_status` | `ACTIVE` · `FROZEN` · `CLOSED` |
+| `status` | `wallet_status` | `ACTIVE` · `FROZEN` (no money in or out except reversals and refunds) · `CLOSED`. Transitions: `wallet-status.ts` |
 | `ledger_balance` | bigint, default 0 | Cache of Σ posted entries |
 | `available_balance` | bigint, default 0 | `ledger_balance` − active holds |
 | `created_at`, `updated_at` | timestamptz | |

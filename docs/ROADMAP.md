@@ -71,12 +71,12 @@ Legend: `[x]` done · `[ ]` to do
 - [x] KYC profile, documents, status lifecycle: Tier 1 (DOB, 18+) and Tier 2 (BVN/NIN via provider, encrypted + HMAC, generic rejection) decided at once; Tier 3 documents (magic-byte checked, local storage) + address → review (open → approve/reject, provider must accept, no self-review); Stage 8 name-lock fix; 59/59 checks on PostgreSQL 18.3
 - [x] Tier → limits mapping: `findTierLimits` (fails closed on a missing row), `checkOutflow` (amount + fee, Lagos day) / `checkInflow` (refunds and reversals exempt), limit errors that never reveal a recipient's limits, limits in `GET /kyc`; 9 checks on PostgreSQL 18.3. Applied by Stages 13–14
 
-### Stage 10 — Wallets
+### Stage 10 — Wallets ✅
 - [x] Wallet created on KYC approval: NGN wallet + `WALLET:<id>` LIABILITY ledger account in the Tier 1 approval transaction (atomic, proven by DB fault injection); idempotent; account number = 9 random digits + Damm check digit; 15/15 checks on PostgreSQL 18.3
-- [ ] Wallet status + balance endpoints
+- [x] Wallet status + balance endpoints: `GET /wallets`, `GET /wallets/:id` (own only, 404 otherwise, no-store); status lifecycle table (`ACTIVE ⇄ FROZEN → CLOSED`, reopen only after reactivation), freeze/unfreeze/reopen service methods (reason audited only, no self-action), deactivation routed through it; 26 checks on PostgreSQL 18.3
 
 ### Stage 11 — Ledger
-- [ ] `ledger.post()`: invariants, ordered row locks, balance check, entries, cached balances; reject `CLOSED`/`FROZEN` wallets under the wallet lock (deactivation relies on this)
+- [ ] `ledger.post()`: invariants, ordered row locks, balance check, entries, cached balances; reject `CLOSED` wallets and `FROZEN` ones (except reversals and refunds) under the wallet lock (deactivation and freezes rely on this)
 - [ ] Make `ledger_accounts.code/type/currency` immutable once created (trigger; found while testing the seed)
 - [ ] Translate database errors at the service boundary: `FN001` (append-only), `23514` `ledger_entries_balanced`, unique and FK violations; read the real SQLSTATE from `meta.driverAdapterError.cause.originalCode`
 - [ ] Holds (place / settle / release)
@@ -113,7 +113,7 @@ Legend: `[x]` done · `[ ]` to do
 - [ ] CRUD with ownership checks + audit
 
 ### Stage 19 — Admin
-- [ ] Users (view/suspend), KYC review, transactions, wallets, audit logs, settings
+- [ ] Users (view/suspend/reactivate), KYC review (`KycService.startReview/approve/reject` exist), transactions, wallets (`WalletService.freeze/unfreeze/reopen` exist), audit logs, settings
 - [ ] Per-permission protection
 
 ### Stage 20 — Reconciliation & statements

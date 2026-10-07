@@ -19,6 +19,8 @@ import type { KycProvider } from '../modules/kyc/providers/kyc-provider.ts';
 import type { MessageSender } from '../modules/notifications/notification.types.ts';
 import { createUserRouter } from '../modules/users/user.routes.ts';
 import { UserService } from '../modules/users/user.service.ts';
+import { createWalletRouter } from '../modules/wallets/wallet.routes.ts';
+import { WalletService } from '../modules/wallets/wallet.service.ts';
 
 export interface ApiDependencies {
   db: PrismaClient;
@@ -78,6 +80,8 @@ export function createApiRouter({
       rateLimitStore,
     }),
   );
+
+  router.use('/wallets', createWalletRouter({ wallets: new WalletService(db), authenticate }));
 
   return router;
 }

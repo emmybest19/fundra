@@ -89,7 +89,7 @@ describe('createApp', () => {
   });
 
   it('returns the standard 404 envelope under /api/v1', async () => {
-    const res = await request(appWith()).get('/api/v1/wallets');
+    const res = await request(appWith()).get('/api/v1/no-such-route');
 
     expect(res.status).toBe(404);
     expect(res.body).toEqual({

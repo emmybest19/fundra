@@ -8,6 +8,7 @@ import type {
   PrismaClient,
   User,
   UserStatus,
+  WalletStatus,
 } from '../../generated/prisma/client.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import type { AuditContext } from '../audit/audit.types.ts';
@@ -15,6 +16,7 @@ import type { IssuedTokens } from '../auth/auth.service.ts';
 import type { OtpService } from '../auth/otp.ts';
 import { failClosed, invalidOtp, otpCooldown } from '../auth/verification.service.ts';
 import type { MessageSender } from '../notifications/notification.types.ts';
+import { changeWalletStatus } from '../wallets/wallet.service.ts';
 import {
   mergePreferences,
   readPreferences,
@@ -396,8 +398,10 @@ export class UserService {
       if (locked === undefined) throw new Error(`User ${userId} not found`);
       assertStatusTransition(locked.status, 'DEACTIVATED');
 
-      const wallets = await tx.$queryRaw<{ id: string; ledger_balance: bigint }[]>`
-        SELECT id, ledger_balance FROM wallets WHERE user_id = ${userId}::uuid
+      const wallets = await tx.$queryRaw<
+        { id: string; status: WalletStatus; ledger_balance: bigint }[]
+      >`
+        SELECT id, status, ledger_balance FROM wallets WHERE user_id = ${userId}::uuid
         ORDER BY id FOR UPDATE`;
       if (wallets.some((wallet) => String(wallet.ledger_balance) !== '0')) {
         throw new ConflictError(
@@ -427,10 +431,17 @@ export class UserService {
         where: { id: userId },
         data: { status: 'DEACTIVATED', deactivatedAt: now },
       });
-      const { count: walletsClosed } = await tx.wallet.updateMany({
-        where: { userId, status: { not: 'CLOSED' } },
-        data: { status: 'CLOSED' },
-      });
+      // Through the wallet lifecycle table, under the locks taken above. No per-wallet
+      // notification: the user.deactivated event already covers it.
+      const toClose = wallets.filter((wallet) => wallet.status !== 'CLOSED');
+      for (const wallet of toClose) {
+        await changeWalletStatus(tx, { id: wallet.id, userId, status: wallet.status }, 'CLOSED', {
+          actor: { type: 'USER', userId },
+          context,
+          notify: false,
+        });
+      }
+      const walletsClosed = toClose.length;
       const { count: sessionsRevoked } = await tx.session.updateMany({
         where: { userId, revokedAt: null },
         data: { revokedAt: now, revokeReason: 'ACCOUNT_DEACTIVATED' },
