@@ -83,6 +83,9 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 409 | `CONTACT_UNAVAILABLE` | The new email/phone was taken by another account before you confirmed |
 | 409 | `ACCOUNT_HAS_BALANCE` | Deactivation needs every wallet at zero; withdraw or transfer first |
 | 409 | `ACCOUNT_HAS_PENDING_TRANSACTIONS` | Deactivation waits until no transaction is pending or processing |
+| 422 | `INSUFFICIENT_FUNDS` | Your available balance (excluding money on hold) is too low (money movement, from Stage 13) |
+| 422 | `WALLET_FROZEN` | Your wallet is restricted; contact support |
+| 422 | `WALLET_CLOSED` | Your wallet is closed |
 | 422 | `LIMIT_PER_TRANSACTION_EXCEEDED` | Amount + fee is above your tier's per-transaction limit (money movement, from Stage 13) |
 | 422 | `LIMIT_DAILY_OUTFLOW_EXCEEDED` | Would take today's outgoing total (Lagos day, fees included) over your tier's daily limit; the message says how much is left |
 | 422 | `LIMIT_MAX_BALANCE_EXCEEDED` | A deposit would take your balance over your tier's maximum |

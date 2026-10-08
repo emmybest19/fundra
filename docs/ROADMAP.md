@@ -76,7 +76,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Wallet status + balance endpoints: `GET /wallets`, `GET /wallets/:id` (own only, 404 otherwise, no-store); status lifecycle table (`ACTIVE ⇄ FROZEN → CLOSED`, reopen only after reactivation), freeze/unfreeze/reopen service methods (reason audited only, no self-action), deactivation routed through it; 26 checks on PostgreSQL 18.3
 
 ### Stage 11 — Ledger
-- [ ] `ledger.post()`: invariants, ordered row locks, balance check, entries, cached balances; reject `CLOSED` wallets and `FROZEN` ones (except reversals and refunds) under the wallet lock (deactivation and freezes rely on this)
+- [x] `ledger.post()`: invariants, ordered row locks, balance check, entries, cached balances; reject `CLOSED` wallets and `FROZEN` ones (except reversals and refunds) under the wallet lock. One posting per transaction; `lockWallets` for limit checks under the lock; 25 checks on PostgreSQL 18.3, DB backstops proven by code breaks
 - [ ] Make `ledger_accounts.code/type/currency` immutable once created (trigger; found while testing the seed)
 - [ ] Translate database errors at the service boundary: `FN001` (append-only), `23514` `ledger_entries_balanced`, unique and FK violations; read the real SQLSTATE from `meta.driverAdapterError.cause.originalCode`
 - [ ] Holds (place / settle / release)

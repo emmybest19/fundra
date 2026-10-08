@@ -116,7 +116,7 @@ docs/              project definition, architecture, case study, API, security
 | Users (Stage 8): profile, contact change, preferences, status lifecycle, deactivation, password change | Done |
 | KYC (Stage 9): `KycProvider` + mock, tiers 1–3, documents, review lifecycle, tier limits | Done. Reviewer endpoints arrive with Admin (Stage 19) |
 | Wallets (Stage 10): created with Tier 1 (own ledger account, check-digit account number), status lifecycle, balance endpoints | Done. Freeze/unfreeze endpoints arrive with Admin (Stage 19) |
-| Ledger (Stage 11) | Next |
+| Ledger (Stage 11): `ledger.post()` (invariants, ordered wallet locks, status and funds under the lock, cached balances) | In progress (item 1 of 5 done) |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).

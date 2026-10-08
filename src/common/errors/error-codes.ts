@@ -46,6 +46,11 @@ export const ErrorCode = {
   // Wallets (src/modules/wallets)
   WALLET_SELF_ACTION: 'WALLET_SELF_ACTION',
 
+  // Ledger (src/modules/ledger). Callers remap a recipient's refusal to RECIPIENT_CANNOT_RECEIVE.
+  INSUFFICIENT_FUNDS: 'INSUFFICIENT_FUNDS',
+  WALLET_FROZEN: 'WALLET_FROZEN',
+  WALLET_CLOSED: 'WALLET_CLOSED',
+
   // Limits (src/modules/kyc/tier-limits.ts; applied by money movement)
   LIMIT_PER_TRANSACTION_EXCEEDED: 'LIMIT_PER_TRANSACTION_EXCEEDED',
   LIMIT_DAILY_OUTFLOW_EXCEEDED: 'LIMIT_DAILY_OUTFLOW_EXCEEDED',

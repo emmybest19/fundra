@@ -374,7 +374,7 @@ Verified on PostgreSQL 18.3 (PGlite): 26 checks, plus the item 1 suite still pas
 
 ---
 
-## 7. Financial core — *Designed*
+## 7. Financial core — *Partly built (posting)*
 
 ### 7.1 Money representation
 
@@ -428,15 +428,30 @@ A database transaction alone does not stop two simultaneous debits from both pas
 1. Runs inside a Prisma interactive transaction with a short timeout.
 2. Locks the wallets involved with `SELECT … FOR UPDATE`, **in ascending wallet-ID order**, so opposing transfers (A→B and B→A) cannot deadlock.
 3. Checks the available balance **after** the lock is acquired.
-4. On a lock or serialization failure, retries a bounded number of times. This is safe because the request is idempotent.
+4. On a lock or serialization failure, the **caller** (the money endpoint, which owns the idempotency key) retries a bounded number of times. This is safe because the request is idempotent, and one posting per transaction stops a retry from posting twice.
 
-### 7.7 Posting API
+### 7.7 Posting API — *Built*
 
 ```text
-ledger.post(tx, { transactionId, entries: [{ account, direction, amount }] })
-  → validate invariants → lock wallets → check available funds
-  → insert entries → update cached balances
+post(tx, { transactionId, entries: [{ ledgerAccountId, direction, amount }] })
+  → invariants → lock the transaction row → load accounts → lock wallets (ascending ID)
+  → status rules + available funds, under the locks → insert entries → update cached balances
 ```
+
+[ledger.service.ts](../src/modules/ledger/ledger.service.ts) is the only writer of ledger entries and wallet balances. It runs inside the caller's transaction, so a money movement's transaction row, entries, balances, audit row and events commit together.
+
+| Step | Rule |
+|---|---|
+| Invariants | At least two entries, every amount a positive `bigint`, Σ debits = Σ credits, each account at most once. Pure function, no database ([ledger.utils.ts](../src/modules/ledger/ledger.utils.ts)) |
+| Transaction | Locked `FOR UPDATE`; must be `PENDING` or `PROCESSING` with **no entries yet**: one posting per transaction, so a retried request can't post twice. Its `type` and `currency` come from the row, never from the caller |
+| Accounts | Must exist and be in the transaction's currency (invariant 2) |
+| Locks | Wallet rows `FOR UPDATE` in ascending ID order (raw SQL in [ledger.repository.ts](../src/modules/ledger/ledger.repository.ts)). System accounts are never locked (no cached balance, no hot row). `lockWallets` is exported so callers can check tier limits against locked balances first; `post` re-locks in the same order (a no-op) |
+| Status | Under the lock: `CLOSED` refuses every posting; `FROZEN` refuses all but `REVERSAL` and `REFUND`. Checked before funds |
+| Funds | Change per wallet = credits − debits (wallets are liabilities). **Available** + change must be ≥ 0, so money on hold can't be spent twice |
+| Write | Entries with `balance_after` for wallets (exact: they're locked), `null` for system accounts; both cached balances move by the change. Holds (item 4) release first, then post, in the same transaction |
+| Errors | `LedgerRefusal` (`422 INSUFFICIENT_FUNDS` / `WALLET_FROZEN` / `WALLET_CLOSED`) carries the `walletId`, so the caller shows a recipient's refusal as `RECIPIENT_CANNOT_RECEIVE`. A broken invariant is a `PostingInvariantError`: a bug, surfaced as a 500 |
+
+Verified on PostgreSQL 18.3 (PGlite): 25 checks (deposit, transfer with fee, reversal through a frozen wallet, exact-zero spending, holds respected, second posting refused, currency mismatch, cached balance = Σ entries for every wallet, the whole ledger balanced) and three deliberate code breaks. Two of them show the database holding the line on its own: with the app's invariant check removed, the deferred `ledger_entries_balanced` trigger refused the unbalanced posting at commit; with the funds check removed, the wallet balance CHECK refused the overdraft. Nothing was written either time. Under concurrency, PGlite serves every connection from one backend, so parallel debits are proven on real PostgreSQL in item 5.
 
 ### 7.8 Transaction state machine
 
