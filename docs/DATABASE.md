@@ -518,18 +518,20 @@ The application checks all of these first, so it can return clear errors. The da
 | 9 | Webhooks processed at most once | Unique `(provider_id, event_id)` |
 | 10 | Retries can't duplicate money movement | Unique `(user_id, key)` on `idempotency_keys` |
 | 11 | One BVN/NIN per verified identity | Unique `bvn_hmac` / `nin_hmac` |
+| 12 | Ledger accounts are immutable (code, type and currency define what entries mean) | Same append-only trigger on `ledger_accounts` (Stage 11) |
 | 12 | Valid formats (handles, phones, references, account numbers) | `CHECK` regexes |
 
 Where each rule lives:
 - **Partial indexes** are declared in `schema.prisma` with Prisma's `partialIndexes` preview feature, so later migrations keep them.
 - **CHECK constraints** (41) can't be expressed in Prisma's schema language. They are hand-written SQL at the end of the init migration.
-- **Rules 1, 3 and 4** are triggers in the `*_ledger_integrity_triggers` migration:
+- **Rules 1, 3 and 4** are triggers in the `*_ledger_integrity_triggers` migration, and **rule 12** in `*_ledger_accounts_append_only`:
 
   | Trigger | Fires | Effect |
   |---|---|---|
   | `ledger_entries_balanced` | `AFTER INSERT`, constraint trigger, `DEFERRABLE INITIALLY DEFERRED` | At COMMIT, recomputes Σ debits and Σ credits for each touched transaction. A mismatch raises `23514 check_violation` with constraint `ledger_entries_balanced`, and the whole commit rolls back |
   | `ledger_entries_append_only`, `audit_logs_append_only` | `BEFORE UPDATE OR DELETE`, per row | Raise SQLSTATE **`FN001`** (Fundra-reserved), message `<table> is append-only: <op> is not allowed` |
   | `ledger_entries_no_truncate`, `audit_logs_no_truncate` | `BEFORE TRUNCATE`, per statement | Same; `TRUNCATE` skips row triggers, so it needs its own |
+  | `ledger_accounts_append_only`, `ledger_accounts_no_truncate` | Same as above | Same function and `FN001`. `INSERT` stays allowed (wallet creation, seed). Also stops a `currency` change from cascading into the owning wallet through the `ON UPDATE CASCADE` composite foreign key |
 
   Why deferred: entries are inserted one at a time, so mid-transaction the books are legitimately unbalanced. Checking at COMMIT allows that but never allows *committing* them. Application code must therefore never run `SET CONSTRAINTS ALL IMMEDIATE`. A balance failure surfaces when the transaction **commits**, so the ledger service must handle errors from the commit itself (Stage 11).
 
@@ -537,7 +539,7 @@ Where each rule lives:
 
   | SQLSTATE | Meaning | Raised by |
   |---|---|---|
-  | `FN001` | Append-only table modified | `ledger_entries`, `audit_logs` triggers |
+  | `FN001` | Append-only table modified | `ledger_entries`, `audit_logs`, `ledger_accounts` triggers |
   | `23514` (constraint `ledger_entries_balanced`) | Unbalanced ledger transaction at COMMIT | `ledger_entries_balanced` |
 
   Limits: triggers stop application bugs, not a database superuser, who can disable them. Running the app as a non-owner role without `TRUNCATE`/`ALTER` rights closes that gap (Stage 25).
@@ -596,4 +598,4 @@ A mutation test that removed `DEFERRABLE INITIALLY DEFERRED` made every valid po
 - A hand-granted `kyc:review` on SUPPORT was revoked by a re-seed.
 - A conflicting `FEE_REVENUE:NGN` (altered to EXPENSE) made the seed exit 1 with a clear message, and the rogue grant made in the same setup was **still present** afterwards, proving the rollback was atomic.
 
-**Finding:** that last test showed a system ledger account's `type` can be changed with a plain `UPDATE`. On an account that already has entries, that would silently change what its balance means. `code`, `type` and `currency` should become immutable once set (follow-up in Stage 11).
+**Finding:** that last test showed a system ledger account's `type` can be changed with a plain `UPDATE`. On an account that already has entries, that would silently change what its balance means. `code`, `type` and `currency` should become immutable once set. **Resolved in Stage 11:** `ledger_accounts` is now append-only (rule 12). Testing it found a second reason: with the trigger removed, a `currency` change on a wallet's account silently cascaded into the wallet's own currency (NGN → USD) through the `ON UPDATE CASCADE` foreign key.

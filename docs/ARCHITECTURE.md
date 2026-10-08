@@ -401,6 +401,7 @@ From the platform's point of view, a user's balance is money Fundra **owes** tha
 | 2 | All entries in one transaction share one currency | `ledger.service` + check |
 | 3 | Entries are never updated or deleted | DB triggers blocking `UPDATE`/`DELETE`/`TRUNCATE` (*Built*); corrections are new `REVERSAL`/`REFUND` postings |
 | 4 | Entry amounts are strictly positive; direction carries the sign | `CHECK (amount > 0)` |
+| 5 | Ledger accounts never change: code, type and currency define what their entries mean | Same triggers on `ledger_accounts` (*Built*, Stage 11); accounts are only ever inserted |
 
 Each rule is enforced in both the application and the database. The application gives clear errors; the database guarantees the rule even if application code has a bug.
 
@@ -701,7 +702,6 @@ This reflects the repository as it stands, not the design.
 | The init migration has only been run on PGlite (in-process PostgreSQL 18.3), not on the Docker database, and `prisma migrate` drift detection hasn't run (it needs a shadow database) | Low risk, same engine version, but `npm run db:migrate` against Docker is still the real test |
 | The 49 migration checks (30 constraints + 19 triggers) live in throwaway scripts | They need porting to `tests/integration` with Testcontainers (Stage 6) to keep guarding future migrations |
 | Ledger triggers can be disabled by a database superuser | They protect against application bugs, not a compromised DBA account. The app must run as a non-owner role (Stage 25) |
-| `ledger_accounts.type`/`currency`/`code` can be changed with a plain `UPDATE` | Changing the type of an account that holds entries silently changes what its balance means. To be locked by a trigger in Stage 11 |
 | A native PostgreSQL 16 Windows service (`postgresql-x64-16`) occupies port 5432 on the development machine, listening on all interfaces | Fundra's Docker database uses **5433** instead. That service is outside this project, but it's reachable from the local network |
 | Docker isn't installed on the development machine; PostgreSQL and Redis aren't available | Integration work is blocked until they are set up |
 | No `.env.example` (removed by choice) | New contributors can't see which variables are required; `config/env.ts` validation will be the only source of truth |

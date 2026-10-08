@@ -108,7 +108,7 @@ docs/              project definition, architecture, case study, API, security
 | App skeleton: config, logging, errors, middleware, server, health, shutdown | Done (108 unit tests) |
 | Docker, PostgreSQL, Redis | `docker-compose.yml` written; not yet run (Docker Desktop not installed) |
 | Database design, Prisma, schema + first migration | Done ([DATABASE.md](docs/DATABASE.md)); not yet applied to the Docker database |
-| Ledger integrity triggers | Done (verified on PostgreSQL 18.3 via PGlite) |
+| Ledger integrity triggers (entries and audit logs append-only, balanced at commit; ledger accounts append-only since Stage 11) | Done (verified on PostgreSQL 18.3 via PGlite) |
 | Seed data (roles, permissions, limits, fees, system accounts) | Done |
 | Auth (Stage 7): register, login, refresh (rotating, reuse detection), logout, sessions/devices, `authenticate`, email/phone verification, password reset, RBAC `authorize` | Done. Codes aren't delivered until Stage 17 |
 | Database readiness check + connection close on shutdown | Done (Stage 5 complete) |
@@ -116,7 +116,7 @@ docs/              project definition, architecture, case study, API, security
 | Users (Stage 8): profile, contact change, preferences, status lifecycle, deactivation, password change | Done |
 | KYC (Stage 9): `KycProvider` + mock, tiers 1–3, documents, review lifecycle, tier limits | Done. Reviewer endpoints arrive with Admin (Stage 19) |
 | Wallets (Stage 10): created with Tier 1 (own ledger account, check-digit account number), status lifecycle, balance endpoints | Done. Freeze/unfreeze endpoints arrive with Admin (Stage 19) |
-| Ledger (Stage 11): `ledger.post()` (invariants, ordered wallet locks, status and funds under the lock, cached balances) | In progress (item 1 of 5 done) |
+| Ledger (Stage 11): `ledger.post()` (invariants, ordered wallet locks, status and funds under the lock, cached balances) | In progress (items 1–2 of 5 done) |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).
