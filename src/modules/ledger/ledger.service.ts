@@ -10,6 +10,7 @@ import type {
   PostedWallet,
   PostingRequest,
   PostingResult,
+  SettlingHold,
 } from './ledger.types.ts';
 import {
   assertValidEntries,
@@ -53,7 +54,20 @@ export function lockWallets(tx: Tx, walletIds: readonly string[]): Promise<Locke
  * funds, under the locks → insert entries → update cached balances. The database backs every
  * rule: the deferred balanced-entries trigger, balance CHECKs and append-only triggers.
  */
-export async function post(tx: Tx, request: PostingRequest): Promise<PostingResult> {
+export function post(tx: Tx, request: PostingRequest): Promise<PostingResult> {
+  return postEntries(tx, request);
+}
+
+/**
+ * post() with one internal option: `settling` (only from settleHold). The held wallet's
+ * reservation is undone in the same step (available += hold), its debit must equal the hold
+ * exactly, and its status is not re-checked: by settlement the money has already left.
+ */
+export async function postEntries(
+  tx: Tx,
+  request: PostingRequest,
+  settling?: SettlingHold,
+): Promise<PostingResult> {
   assertValidEntries(request.entries);
 
   const transaction = await lockTransactionRow(tx, request.transactionId);
@@ -69,6 +83,19 @@ export async function post(tx: Tx, request: PostingRequest): Promise<PostingResu
   const already = await tx.ledgerEntry.count({ where: { transactionId: transaction.id } });
   if (already > 0) {
     throw new PostingInvariantError(`transaction ${transaction.id} is already posted`);
+  }
+  // A held transaction is posted only by settling its hold; a direct post would take the
+  // money out of available twice (once at the hold, once here).
+  if (settling === undefined) {
+    const hold = await tx.hold.findUnique({
+      where: { transactionId: transaction.id },
+      select: { status: true },
+    });
+    if (hold?.status === 'ACTIVE') {
+      throw new PostingInvariantError(
+        `transaction ${transaction.id} has an ACTIVE hold; settle it with settleHold`,
+      );
+    }
   }
 
   const accounts = await loadAccounts(
@@ -97,10 +124,22 @@ export async function post(tx: Tx, request: PostingRequest): Promise<PostingResu
     changes.set(walletId, balanceChange(account.type, entry.direction, entry.amount));
   }
 
+  if (settling !== undefined) {
+    const held = wallets.get(settling.walletId);
+    if (held === undefined || changes.get(settling.walletId) !== -settling.amount) {
+      throw new PostingInvariantError(
+        `settling a hold of ${settling.amount.toString()} needs exactly that debit from wallet ${settling.walletId}`,
+      );
+    }
+    // Undo the reservation in the same step: the posting below takes the money for real.
+    wallets.set(held.id, { ...held, availableBalance: held.availableBalance + settling.amount });
+  }
+
   // Under the locks: status first (a frozen wallet is refused even with funds), then funds.
   for (const walletId of [...changes.keys()].sort()) {
     const wallet = wallets.get(walletId);
     if (wallet === undefined) throw new PostingInvariantError(`wallet ${walletId} not found`);
+    if (walletId === settling?.walletId) continue; // promised when the hold was placed
     const refusal = walletStatusRefusal(wallet.status, transaction.type);
     if (refusal !== null) throw new LedgerRefusal(refusal, walletId);
   }

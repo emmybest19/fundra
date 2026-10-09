@@ -415,12 +415,23 @@ Each rule is enforced in both the application and the database. The application 
 | Withdrawal ₦5,000 (settled) | Wallet 5,000 | Provider settlement 5,000 |
 | Reversal of a transfer | Wallet B 10,000 | Wallet A 10,000 |
 
-### 7.5 Balances and holds
+### 7.5 Balances and holds — *Built*
 
 - **Ledger balance** = sum of the wallet's posted entries.
 - **Available balance** = ledger balance − active holds.
 - A **Hold** reserves funds for an in-flight operation, such as a withdrawal waiting for the provider. It is either settled into postings or released.
 - The `Wallet` balance columns are **cached projections**, updated in the same transaction as the entries. The `reconcile-transactions` job recomputes them from the ledger and alerts on any drift.
+- **Invariant:** for every wallet, available = ledger − Σ active holds.
+
+[holds.ts](../src/modules/ledger/holds.ts), inside the caller's transaction, locking the transaction row then the wallet (the same order as `post`; one hold per transaction, so the transaction-row lock serialises everything on a hold):
+
+| Operation | Effect | Rules |
+|---|---|---|
+| `placeHold` | available −= amount; ledger unchanged; hold `ACTIVE` (optional `expires_at`) | Transaction `PENDING`/`PROCESSING`, not posted, no hold yet; the wallet must be its **source** wallet and currency; wallet status rules apply (`FROZEN`/`CLOSED` refuse: a hold starts an outflow); available must cover it. Tier limits are checked by the caller under `lockWallets` first |
+| `settleHold` | Undo the reservation and `post()` the entries in one step: ledger −amount, available unchanged; hold `SETTLED` | The held wallet's debit must equal the hold **exactly** (fee included). Allowed on a wallet frozen after the hold was placed: by settlement the money has left (e.g. the provider paid out). The exemption covers that wallet in that posting only |
+| `releaseHold` | available += amount; hold `RELEASED` | Allowed whatever the wallet's status: it returns the user's own money. Expired holds are released by Stage 20's reconciliation |
+
+`post()` refuses a transaction with an `ACTIVE` hold: a direct post would take the money out of available twice. A hold settled or released can't be resolved again. Verified on PostgreSQL 18.3 (PGlite): 22 checks (amounts to the kobo, the frozen-mid-flight settlement and its narrow exemption, every double-resolution refused, the invariant for every wallet, the ledger balanced), plus three deliberate code breaks, each caught: settle without undoing the reservation (available taken twice), a hold resolved twice, `post()` ignoring an active hold.
 
 ### 7.6 Concurrency
 

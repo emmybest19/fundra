@@ -36,6 +36,13 @@ export interface LockedTransaction {
   type: TransactionType;
   status: TransactionStatus;
   currency: string;
+  sourceWalletId: string | null;
+}
+
+/** Internal: post() settling a hold (see holds.ts). */
+export interface SettlingHold {
+  walletId: string;
+  amount: bigint;
 }
 
 export interface PostedWallet {

@@ -11,7 +11,7 @@ export async function lockTransactionRow(
   transactionId: string,
 ): Promise<LockedTransaction | undefined> {
   const [row] = await tx.$queryRaw<LockedTransaction[]>`
-    SELECT id, type, status, currency
+    SELECT id, type, status, currency, source_wallet_id AS "sourceWalletId"
     FROM transactions WHERE id = ${transactionId}::uuid
     FOR UPDATE`;
   return row;
