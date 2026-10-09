@@ -78,7 +78,7 @@ Legend: `[x]` done · `[ ]` to do
 ### Stage 11 — Ledger
 - [x] `ledger.post()`: invariants, ordered row locks, balance check, entries, cached balances; reject `CLOSED` wallets and `FROZEN` ones (except reversals and refunds) under the wallet lock. One posting per transaction; `lockWallets` for limit checks under the lock; 25 checks on PostgreSQL 18.3, DB backstops proven by code breaks
 - [x] Make `ledger_accounts.code/type/currency` immutable once created: whole table append-only (`UPDATE`/`DELETE`/`TRUNCATE` → `FN001`, `INSERT` allowed), migration `*_ledger_accounts_append_only`; also blocks a currency change cascading into the wallet; 14 checks on PostgreSQL 18.3
-- [ ] Translate database errors at the service boundary: `FN001` (append-only), `23514` `ledger_entries_balanced`, unique and FK violations; read the real SQLSTATE from `meta.driverAdapterError.cause.originalCode`
+- [x] Translate database errors at the service boundary: classifier by SQLSTATE (Prisma codes proved unreliable), unbalanced ledger now `FN002` (COMMIT errors lose the constraint name), services match constraint names, fallback 409/503/500 with nothing leaked; 18 real-error checks on PostgreSQL 18.3
 - [ ] Holds (place / settle / release)
 - [ ] **Concurrency test:** parallel debits never overdraw, ledger always balances
 

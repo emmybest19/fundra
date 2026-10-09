@@ -60,7 +60,7 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 401 | `UNAUTHENTICATED` | Missing, invalid or expired credentials |
 | 403 | `FORBIDDEN` | Authenticated but not allowed |
 | 404 | `NOT_FOUND` | Resource doesn't exist or isn't visible to the caller |
-| 409 | `CONFLICT` | Conflicts with current state (duplicate, wrong status) |
+| 409 | `CONFLICT` | Conflicts with current state (duplicate, wrong status, or an unexpected clash with an existing record) |
 | 400 | `IDEMPOTENCY_KEY_REQUIRED` / `IDEMPOTENCY_KEY_INVALID` | `Idempotency-Key` header missing or malformed (see [Idempotency](#idempotency)) |
 | 409 | `IDEMPOTENCY_REQUEST_IN_PROGRESS` | A request with the same key is still being processed |
 | 413 | `PAYLOAD_TOO_LARGE` | Request body exceeds the size limit |
@@ -99,7 +99,7 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 422 | `UNPROCESSABLE` | Valid request that breaks a business rule. Modules use more specific codes (e.g. `INSUFFICIENT_FUNDS`) as they are added |
 | 429 | `RATE_LIMITED` | Too many requests |
 | 500 | `INTERNAL_ERROR` | Unexpected server failure; details are only in the logs |
-| 503 | `SERVICE_UNAVAILABLE` | A dependency (database, Redis, the KYC provider) is unavailable |
+| 503 | `SERVICE_UNAVAILABLE` | A dependency (database, Redis, the KYC provider) is unavailable, or the database was briefly busy (deadlock, lock timeout); safe to retry after `Retry-After` seconds |
 
 Module-specific codes are registered in [error-codes.ts](../src/common/errors/error-codes.ts) and listed here as each module is built.
 

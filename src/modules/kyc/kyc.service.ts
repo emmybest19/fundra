@@ -6,6 +6,7 @@ import {
   ConflictError,
   ErrorCode,
   ForbiddenError,
+  isUniqueViolation,
   ServiceUnavailableError,
   UnsupportedMediaTypeError,
   ValidationError,
@@ -76,10 +77,6 @@ export interface KycReviewCase {
 export function isAdult(dateOfBirth: string, now: number): boolean {
   const year = Number(dateOfBirth.slice(0, 4));
   return `${String(year + MINIMUM_AGE)}${dateOfBirth.slice(4)}` <= lagosDate(now);
-}
-
-function isUniqueViolation(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && 'code' in err && err.code === 'P2002';
 }
 
 const PROFILE_WITH_DOCUMENTS = {
@@ -596,7 +593,10 @@ export class KycService {
       });
     } catch (err) {
       // Another account stored the same number between our check and our commit.
-      if (decision.approved && isUniqueViolation(err)) {
+      if (
+        decision.approved &&
+        isUniqueViolation(err, 'kyc_profiles_bvn_hmac_key', 'kyc_profiles_nin_hmac_key')
+      ) {
         return this.#decideTier2(userId, expectedTier, input, hmac, context, {
           approved: false,
           cause: 'DUPLICATE_IDENTITY',

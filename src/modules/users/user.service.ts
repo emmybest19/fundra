@@ -1,5 +1,10 @@
 // Business logic for users: profile, preferences, contact changes, deactivation.
-import { ConflictError, ErrorCode, ValidationError } from '../../common/errors/index.ts';
+import {
+  ConflictError,
+  ErrorCode,
+  isUniqueViolation,
+  ValidationError,
+} from '../../common/errors/index.ts';
 import { writeOutboxEvent } from '../../common/outbox/outbox.writer.ts';
 import { maskEmail, maskPhone } from '../../common/utils/mask.ts';
 import type {
@@ -117,10 +122,6 @@ export function isNameLocked(kyc: { tier: number; status: KycStatus }): boolean 
 /** Money still moving: deactivating now would strand it. */
 const OPEN_TRANSACTION_STATUSES = ['PENDING', 'PROCESSING'] as const;
 
-function isUniqueViolation(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && 'code' in err && err.code === 'P2002';
-}
-
 const contactOf = (user: User, channel: ContactChannel) =>
   channel === 'email' ? user.email : user.phone;
 
@@ -208,7 +209,7 @@ export class UserService {
         );
       });
     } catch (err) {
-      if (!isUniqueViolation(err)) throw err;
+      if (!isUniqueViolation(err, 'users_handle_key')) throw err;
       throw new ConflictError('That handle is already taken.', {
         code: ErrorCode.HANDLE_TAKEN,
         cause: err,
@@ -354,7 +355,7 @@ export class UserService {
       });
     } catch (err) {
       // Another account took the address between request and confirm.
-      if (!isUniqueViolation(err)) throw err;
+      if (!isUniqueViolation(err, 'users_email_key', 'users_phone_key')) throw err;
       throw new ConflictError(`That ${channel} can't be used. Try a different one.`, {
         code: ErrorCode.CONTACT_UNAVAILABLE,
         cause: err,

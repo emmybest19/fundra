@@ -2,10 +2,13 @@ import { ZodError } from 'zod';
 import {
   AppError,
   BadRequestError,
+  ConflictError,
   InternalError,
   PayloadTooLargeError,
+  ServiceUnavailableError,
   ValidationError,
 } from './app-error.ts';
+import { classifyDatabaseError } from './database-error.ts';
 
 /** Shape of the errors Express's body parser raises (it does not export a class). */
 function bodyParserErrorType(error: unknown): string | undefined {
@@ -40,5 +43,16 @@ export function normalizeError(error: unknown): AppError {
     return new PayloadTooLargeError(undefined, { cause: error });
   }
 
+  // Database failures a service didn't translate. Never expose SQL, tables or constraints.
+  const failure = classifyDatabaseError(error);
+  if (failure?.kind === 'RETRYABLE') {
+    // Deadlock, serialization failure, lock timeout or expired transaction: rolled back.
+    return new ServiceUnavailableError(undefined, { cause: error, retryAfterSeconds: 1 });
+  }
+  if (failure?.kind === 'UNIQUE') {
+    return new ConflictError('This conflicts with an existing record.', { cause: error });
+  }
+  // Foreign key, NOT NULL, CHECK, append-only, unbalanced ledger: the app should have
+  // prevented it, so it's a bug. A 500 here; the error middleware logs the classification.
   return new InternalError(undefined, { cause: error });
 }

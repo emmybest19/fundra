@@ -12,6 +12,8 @@ export interface AppErrorOptions {
   details?: readonly ErrorDetail[];
   /** The underlying error. Logged, never sent to clients. */
   cause?: unknown;
+  /** Sent as `Retry-After` (seconds): the request is safe to repeat after that long. */
+  retryAfterSeconds?: number;
 }
 
 /**
@@ -22,6 +24,7 @@ export class AppError extends Error {
   readonly statusCode: number;
   readonly code: ErrorCode;
   readonly details: readonly ErrorDetail[] | undefined;
+  readonly retryAfterSeconds: number | undefined;
 
   constructor(
     statusCode: number,
@@ -34,6 +37,7 @@ export class AppError extends Error {
     this.statusCode = statusCode;
     this.code = options.code ?? defaultCode;
     this.details = options.details;
+    this.retryAfterSeconds = options.retryAfterSeconds;
   }
 
   /** Client-facing message and details are only exposed for 4xx errors. */

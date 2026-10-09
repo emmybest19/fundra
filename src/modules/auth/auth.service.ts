@@ -3,6 +3,7 @@ import {
   ConflictError,
   ErrorCode,
   ForbiddenError,
+  isUniqueViolation,
   UnauthorizedError,
   ValidationError,
 } from '../../common/errors/index.ts';
@@ -64,14 +65,6 @@ const accountDisabled = () =>
 
 /** Thrown inside a transaction to roll it back when a concurrent refresh used the token first. */
 class RefreshRaceLost extends Error {}
-
-function uniqueViolationTarget(err: unknown): string | undefined {
-  if (typeof err !== 'object' || err === null || !('code' in err) || err.code !== 'P2002') {
-    return undefined;
-  }
-  // The violated constraint is reported in `meta`; its exact shape varies by driver adapter.
-  return JSON.stringify('meta' in err ? err.meta : {});
-}
 
 export class AuthService {
   readonly #db: PrismaClient;
@@ -385,14 +378,14 @@ export class AuthService {
         return user;
       });
     } catch (err) {
-      const target = uniqueViolationTarget(err);
-      if (target === undefined) throw err;
-      if (target.includes('handle')) {
+      if (isUniqueViolation(err, 'users_handle_key')) {
         throw new ConflictError('That handle is already taken.', {
           code: ErrorCode.HANDLE_TAKEN,
           cause: err,
         });
       }
+      // Email or phone: one message for both, so registration can't confirm which is taken.
+      if (!isUniqueViolation(err, 'users_email_key', 'users_phone_key')) throw err;
       throw new ConflictError('An account with these details already exists. Try signing in.', {
         code: ErrorCode.ACCOUNT_EXISTS,
         cause: err,

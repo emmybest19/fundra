@@ -528,19 +528,21 @@ Where each rule lives:
 
   | Trigger | Fires | Effect |
   |---|---|---|
-  | `ledger_entries_balanced` | `AFTER INSERT`, constraint trigger, `DEFERRABLE INITIALLY DEFERRED` | At COMMIT, recomputes Σ debits and Σ credits for each touched transaction. A mismatch raises `23514 check_violation` with constraint `ledger_entries_balanced`, and the whole commit rolls back |
+  | `ledger_entries_balanced` | `AFTER INSERT`, constraint trigger, `DEFERRABLE INITIALLY DEFERRED` | At COMMIT, recomputes Σ debits and Σ credits for each touched transaction. A mismatch raises SQLSTATE **`FN002`** (constraint `ledger_entries_balanced`; `23514` until migration `*_unbalanced_ledger_error_code`), and the whole commit rolls back |
   | `ledger_entries_append_only`, `audit_logs_append_only` | `BEFORE UPDATE OR DELETE`, per row | Raise SQLSTATE **`FN001`** (Fundra-reserved), message `<table> is append-only: <op> is not allowed` |
   | `ledger_entries_no_truncate`, `audit_logs_no_truncate` | `BEFORE TRUNCATE`, per statement | Same; `TRUNCATE` skips row triggers, so it needs its own |
   | `ledger_accounts_append_only`, `ledger_accounts_no_truncate` | Same as above | Same function and `FN001`. `INSERT` stays allowed (wallet creation, seed). Also stops a `currency` change from cascading into the owning wallet through the `ON UPDATE CASCADE` composite foreign key |
 
   Why deferred: entries are inserted one at a time, so mid-transaction the books are legitimately unbalanced. Checking at COMMIT allows that but never allows *committing* them. Application code must therefore never run `SET CONSTRAINTS ALL IMMEDIATE`. A balance failure surfaces when the transaction **commits**, so the ledger service must handle errors from the commit itself (Stage 11).
 
-  **Why `FN001` and not a standard code.** The triggers first raised `23001 restrict_violation`. Testing through Prisma showed its `pg` adapter maps `23001` to `P2003` "Foreign key constraint violated". The edit *was* blocked, but the error claimed a non-existent foreign-key problem and was indistinguishable from a real one. Codes outside the adapter's mapping table pass through with their original code and message, so append-only violations now use a Fundra-reserved class (migration `*_append_only_error_code`). Through Prisma they surface as `P2039` with `meta.driverAdapterError.cause.originalCode === 'FN001'`; a real foreign-key violation is still `P2003`. The balance check's standard `23514` isn't remapped by the adapter, so it is unchanged.
+  **Why `FN001` and not a standard code.** The triggers first raised `23001 restrict_violation`. Testing through Prisma showed its `pg` adapter maps `23001` to `P2003` "Foreign key constraint violated". The edit *was* blocked, but the error claimed a non-existent foreign-key problem and was indistinguishable from a real one. Codes outside the adapter's mapping table pass through with their original code and message, so append-only violations now use a Fundra-reserved class (migration `*_append_only_error_code`). Through Prisma they surface as `P2039` with `meta.driverAdapterError.cause.originalCode === 'FN001'`; a real foreign-key violation is still `P2003`. The balance check first kept the standard `23514`. Stage 11 testing showed why that wasn't enough: the failure arrives **at COMMIT** as a bare `DriverAdapterError` (no Prisma code, no `meta`) whose cause keeps the SQLSTATE but **drops the constraint name**, so it couldn't be told apart from any other CHECK violation (a wallet going negative, say). It now raises `FN002`.
+
+  **Reading errors.** Prisma's own codes depend on the API used, not on what failed (a CHECK violation is `P2039` from a model call and `P2010` from raw SQL), so the app classifies by SQLSTATE only: [database-error.ts](../src/common/errors/database-error.ts) reads `meta.driverAdapterError.cause.originalCode`, or `cause.originalCode` on a bare `DriverAdapterError`. See ARCHITECTURE.md §12.
 
   | SQLSTATE | Meaning | Raised by |
   |---|---|---|
   | `FN001` | Append-only table modified | `ledger_entries`, `audit_logs`, `ledger_accounts` triggers |
-  | `23514` (constraint `ledger_entries_balanced`) | Unbalanced ledger transaction at COMMIT | `ledger_entries_balanced` |
+  | `FN002` | Unbalanced ledger transaction at COMMIT | `ledger_entries_balanced` |
 
   Limits: triggers stop application bugs, not a database superuser, who can disable them. Running the app as a non-owner role without `TRUNCATE`/`ALTER` rights closes that gap (Stage 25).
 

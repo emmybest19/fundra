@@ -640,7 +640,18 @@ Detailed controls will be documented in [security.md](security.md) as each modul
 - OpenAPI generated from the Zod schemas.
 - Endpoint contracts will be documented in [api.md](api.md).
 
-**Errors (*Built*):** `AppError` subclasses in `src/common/errors/` carry a stable `code` from a single catalogue (`error-codes.ts`) and an HTTP status. Services throw them. `normalizeError()` converts anything else: Zod failures become `422 VALIDATION_ERROR` with field paths but no submitted values, body-parser failures become 400/413, and everything unknown becomes `500 INTERNAL_ERROR`, with the original kept as `cause` for logs only. `errorBody()` replaces 5xx messages with a generic one and drops their details, so internal information can't leak. Prisma errors will be translated at the service boundary (Stage 5). The full code table is in [api.md](api.md#error-codes).
+**Errors (*Built*):** `AppError` subclasses in `src/common/errors/` carry a stable `code` from a single catalogue (`error-codes.ts`) and an HTTP status. Services throw them. `normalizeError()` converts anything else: Zod failures become `422 VALIDATION_ERROR` with field paths but no submitted values, body-parser failures become 400/413, and everything unknown becomes `500 INTERNAL_ERROR`, with the original kept as `cause` for logs only. `errorBody()` replaces 5xx messages with a generic one and drops their details, so internal information can't leak. The full code table is in [api.md](api.md#error-codes).
+
+**Database errors (*Built*, Stage 11).** [database-error.ts](../src/common/errors/database-error.ts) classifies a failure by its **SQLSTATE**, never by Prisma's code: probing every failure through Prisma 7 on PostgreSQL 18.3 showed the same CHECK violation as `P2039` (model call) or `P2010` (raw SQL), and the unbalanced-ledger failure at COMMIT as a bare `DriverAdapterError` with no code at all.
+
+| SQLSTATE | Kind | Services translate (by constraint name) | Fallback in `normalizeError` |
+|---|---|---|---|
+| `23505` | `UNIQUE` | `users_handle_key` → `HANDLE_TAKEN`; `users_email_key`/`users_phone_key` → `ACCOUNT_EXISTS` or `CONTACT_UNAVAILABLE`; KYC number HMACs → duplicate-identity rejection; idempotency key → replay | `409 CONFLICT`, generic message |
+| `40001`, `40P01`, `55P03`, Prisma `P2028` | `RETRYABLE` | Money endpoints retry (Stage 13) | `503` + `Retry-After: 1`; the work was rolled back |
+| `23503`, `23502`, `23514` | `FOREIGN_KEY`, `NOT_NULL`, `CHECK` | none: the app checks first | `500`: a bug |
+| `FN001`, `FN002` | `APPEND_ONLY`, `UNBALANCED_LEDGER` | none | `500`, logged with `integrity: true` for alerting |
+
+The error middleware logs `{ database: { kind, sqlstate, constraint, integrity } }` (warn for 409/503, error otherwise). Clients never see SQL, table or constraint names. Verified with 13 unit tests on the recorded shapes and 18 checks that trigger each failure for real (model and raw), plus three deliberate code breaks: classifying by Prisma code (8 raw-SQL checks failed), the `FN002` migration missing (an unbalanced ledger came back as an ordinary `CHECK` with `integrity: false`), and registration ignoring the constraint name (a taken email reported as a taken handle).
 
 **Configuration:** `config/env.ts` validates `process.env` with Zod at startup. The process refuses to start if config is missing or invalid.
 

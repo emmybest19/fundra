@@ -1,6 +1,11 @@
 // Makes money-moving requests safe to retry: the same Idempotency-Key never executes twice.
 // Design and failure analysis: docs/ARCHITECTURE.md, "Idempotency".
-import { ConflictError, ErrorCode, UnprocessableError } from '../errors/index.ts';
+import {
+  ConflictError,
+  ErrorCode,
+  isUniqueViolation,
+  UnprocessableError,
+} from '../errors/index.ts';
 import type { Prisma, PrismaClient } from '../../generated/prisma/client.ts';
 
 export const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1_000;
@@ -37,10 +42,6 @@ export interface IdempotencyOptions {
   ttlMs?: number;
   leaseMs?: number;
   now?: () => number;
-}
-
-function isUniqueViolation(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && 'code' in err && err.code === 'P2002';
 }
 
 export class IdempotencyService {
@@ -113,7 +114,7 @@ export class IdempotencyService {
         });
         return { kind: 'claimed', id: row.id, claimedAt: row.claimedAt };
       } catch (err) {
-        if (!isUniqueViolation(err)) throw err;
+        if (!isUniqueViolation(err, 'idempotency_keys_user_id_key_key')) throw err;
       }
 
       const existing = await this.#db.idempotencyKey.findUnique({
