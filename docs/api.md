@@ -104,7 +104,7 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 422 | `UNPROCESSABLE` | Valid request that breaks a business rule. Modules use more specific codes (e.g. `INSUFFICIENT_FUNDS`) as they are added |
 | 429 | `RATE_LIMITED` | Too many requests |
 | 500 | `INTERNAL_ERROR` | Unexpected server failure; details are only in the logs |
-| 503 | `SERVICE_UNAVAILABLE` | A dependency (database, Redis, the KYC provider) is unavailable, or the database was briefly busy (deadlock, lock timeout); safe to retry after `Retry-After` seconds |
+| 503 | `SERVICE_UNAVAILABLE` | A dependency (database, Redis, the KYC or payment provider) is unavailable, or the database was briefly busy (deadlock, lock timeout); safe to retry after `Retry-After` seconds |
 
 Module-specific codes are registered in [error-codes.ts](../src/common/errors/error-codes.ts) and listed here as each module is built.
 
@@ -591,6 +591,40 @@ Retrying with the same key replays this response (`Idempotent-Replayed: true`) a
 | `422 WALLET_FROZEN` / `WALLET_CLOSED` | Your own wallet is restricted or closed |
 | `422 IDEMPOTENCY_KEY_REUSED` | The key was used for a different request |
 | `503 SERVICE_UNAVAILABLE` | The database stayed busy after three tries; retry with the same key |
+
+### Payments (money in and out)
+
+Deposits now; withdrawals and payments follow. They go through a payment provider (the mock today). Amounts are kobo strings (D1). Every route needs a verified account and a wallet, and responses are never cached.
+
+#### `POST /api/v1/payments/deposits` (idempotent)
+
+```http
+POST /api/v1/payments/deposits
+Idempotency-Key: 6a1d0c3e-2b4f-4a8e-9c7d-1e2f3a4b5c6d
+```
+
+```json
+{ "amount": "500000", "currency": "NGN" }
+```
+
+- Rate limit: 10 per minute.
+
+**201** with the deposit as it appears in your history, plus where to pay:
+
+```json
+{ "data": { "deposit": { "id": "…", "reference": "FND-TRX-…", "type": "DEPOSIT", "status": "PROCESSING", "direction": "IN", "amount": "500000", "…": "…" }, "checkoutUrl": "https://…" } }
+```
+
+Send the customer to `checkoutUrl`. The deposit completes (or fails) **only when the provider tells Fundra**, never because the customer was redirected back: poll [`GET /transactions/:id`](#get-apiv1transactionsid) or wait for the notification. Retrying with the same key replays the response, including the same checkout URL.
+
+| Error | When |
+|---|---|
+| `400 IDEMPOTENCY_KEY_REQUIRED` | No `Idempotency-Key` header |
+| `403 KYC_REQUIRED` | You don't have a wallet yet: complete KYC Tier 1 |
+| `422 WALLET_FROZEN` / `WALLET_CLOSED` | Your wallet is restricted or closed |
+| `422 LIMIT_MAX_BALANCE_EXCEEDED` | The deposit would take your balance over your tier's maximum (the message says the limit) |
+| `422 IDEMPOTENCY_KEY_REUSED` | The key was used for a different request |
+| `503 SERVICE_UNAVAILABLE` | The payment provider is unavailable. Nothing was charged or kept; retry with the same key after `Retry-After` |
 
 ### Transactions (your history)
 

@@ -10,6 +10,7 @@ import { RedisRateLimitStore } from './middleware/rate-limit.middleware.ts';
 import { RedisOtpStore } from './modules/auth/otp.ts';
 import { LocalDocumentStorage } from './modules/kyc/document-storage.ts';
 import { MockKycProvider } from './modules/kyc/providers/mock-kyc-provider.ts';
+import { MockPaymentProvider } from './modules/payments/providers/mock-payment-provider.ts';
 import { HealthService } from './modules/health/health.service.ts';
 import { MemoryMessageSender } from './modules/notifications/notification.service.ts';
 
@@ -36,6 +37,8 @@ const server = createServer(
     // KYC_PROVIDER has one value today; a sandbox adapter becomes a second branch here.
     kycProvider: new MockKycProvider(),
     documentStorage: new LocalDocumentStorage(env.KYC_STORAGE_DIR),
+    // PAYMENT_PROVIDER has one value today; a sandbox adapter becomes a second branch here.
+    paymentProvider: new MockPaymentProvider({ webhookSecret: env.PAYMENT_WEBHOOK_SECRET }),
   }),
 );
 
@@ -51,6 +54,11 @@ logger.warn(
 logger.warn(
   { kycProvider: env.KYC_PROVIDER },
   'KYC uses the mock provider: identity numbers and documents are not really verified. Never use it with real customers',
+);
+
+logger.warn(
+  { paymentProvider: env.PAYMENT_PROVIDER },
+  'Payments use the mock provider: no real money moves in or out. Never use it with real customers',
 );
 
 server.listen(env.PORT, () => {

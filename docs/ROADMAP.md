@@ -92,7 +92,7 @@ Legend: `[x]` done · `[ ]` to do
 
 ### Stage 14 — Payments
 - [x] `PaymentProvider` interface + `MockPaymentProvider`: deposits, name enquiry, payouts, status, webhook verify/parse; reference-idempotent; Paystack-shaped signed webhooks from test hooks; 31 tests
-- [ ] Deposits (pending → webhook completes)
+- [x] Deposits (pending → webhook completes): `POST /payments/deposits` (idempotent; provider called inside the transaction, nothing kept on outage) and `applyEvent` (row-locked, exactly once; mismatches, late news, frozen wallets and max balance held for review, never credited); 28 checks on PostgreSQL 18.3
 - [ ] Withdrawals (hold → payout → settle/release)
 - [ ] Payments + refunds
 

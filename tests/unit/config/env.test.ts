@@ -8,6 +8,7 @@ const valid = {
   OTP_SECRET: 'another-test-secret-at-least-32-characters',
   KYC_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64'),
   KYC_HMAC_KEY: 'a-kyc-hmac-test-secret-at-least-32-characters',
+  PAYMENT_WEBHOOK_SECRET: 'a-payment-webhook-test-secret-at-least-32-chars',
 };
 
 function issuesFor(source: Record<string, string | undefined>): readonly string[] {
@@ -37,6 +38,8 @@ describe('parseEnv', () => {
       KYC_ENCRYPTION_KEY: valid.KYC_ENCRYPTION_KEY,
       KYC_HMAC_KEY: valid.KYC_HMAC_KEY,
       KYC_STORAGE_DIR: 'storage/kyc',
+      PAYMENT_PROVIDER: 'mock',
+      PAYMENT_WEBHOOK_SECRET: valid.PAYMENT_WEBHOOK_SECRET,
     });
   });
 
@@ -99,6 +102,8 @@ describe('parseEnv', () => {
     ['KYC_ENCRYPTION_KEY', Buffer.alloc(16, 1).toString('base64')],
     ['KYC_ENCRYPTION_KEY', 'not base64 at all, but long enough to be 32+ characters'],
     ['KYC_HMAC_KEY', 'too-short-secret'],
+    ['PAYMENT_PROVIDER', 'paystack'],
+    ['PAYMENT_WEBHOOK_SECRET', 'too-short-secret'],
   ])('rejects invalid %s=%s', (name, value) => {
     const issues = issuesFor({ ...valid, [name]: value });
 

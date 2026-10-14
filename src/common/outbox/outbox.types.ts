@@ -31,6 +31,13 @@ export interface OutboxEventPayloads {
     amount: AmountString;
     currency: Currency;
   };
+  /** The provider reported the deposit failed: nothing was charged and nothing credited. */
+  'deposit.failed': {
+    transactionId: string;
+    reference: string;
+    userId: string;
+    reason: string;
+  };
   'withdrawal.completed': {
     transactionId: string;
     reference: string;

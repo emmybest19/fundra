@@ -16,6 +16,9 @@ import { IdentityNumberCrypto } from '../modules/kyc/identity-crypto.ts';
 import { createKycRouter } from '../modules/kyc/kyc.routes.ts';
 import { KycService } from '../modules/kyc/kyc.service.ts';
 import type { KycProvider } from '../modules/kyc/providers/kyc-provider.ts';
+import { DepositService } from '../modules/payments/deposit.service.ts';
+import { createPaymentRouter } from '../modules/payments/payment.routes.ts';
+import type { PaymentProvider } from '../modules/payments/providers/payment-provider.ts';
 import type { MessageSender } from '../modules/notifications/notification.types.ts';
 import { createUserRouter } from '../modules/users/user.routes.ts';
 import { createTransactionRouter } from '../modules/transactions/transaction.routes.ts';
@@ -34,6 +37,7 @@ export interface ApiDependencies {
   messageSender: MessageSender;
   kycProvider: KycProvider;
   documentStorage: DocumentStorage;
+  paymentProvider: PaymentProvider;
 }
 
 export function createApiRouter({
@@ -43,11 +47,13 @@ export function createApiRouter({
   messageSender,
   kycProvider,
   documentStorage,
+  paymentProvider,
 }: ApiDependencies): Router {
   const tokens = new TokenService(env.JWT_ACCESS_SECRET);
   const otp = new OtpService(otpStore, env.OTP_SECRET);
   const authenticate = createAuthenticate({ db, tokens });
   const auth = new AuthService(db, tokens, messageSender);
+  const idempotency = new IdempotencyService(db);
   const router = Router();
 
   router.use(
@@ -96,7 +102,16 @@ export function createApiRouter({
   router.use(
     '/transfers',
     createTransferRouter({
-      transfers: new TransferService(db, new IdempotencyService(db)),
+      transfers: new TransferService(db, idempotency),
+      authenticate,
+      rateLimitStore,
+    }),
+  );
+
+  router.use(
+    '/payments',
+    createPaymentRouter({
+      deposits: new DepositService(db, paymentProvider, idempotency),
       authenticate,
       rateLimitStore,
     }),

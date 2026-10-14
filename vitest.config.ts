@@ -13,6 +13,7 @@ export default defineConfig({
       OTP_SECRET: 'test-only-otp-hmac-secret-not-for-production-use-ok',
       KYC_ENCRYPTION_KEY: 'dGVzdC1vbmx5LWt5Yy1lbmNyeXB0aW9uLWtleS0zMmI=',
       KYC_HMAC_KEY: 'test-only-kyc-hmac-secret-not-for-production-use',
+      PAYMENT_WEBHOOK_SECRET: 'test-only-payment-webhook-secret-not-for-production',
     },
     // Each test starts from a clean slate of mocks, spies and stubbed env vars.
     restoreMocks: true,

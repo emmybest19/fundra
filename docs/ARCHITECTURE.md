@@ -571,28 +571,43 @@ Deposits, withdrawals and (later) payments reach the outside world only through 
 
 Verified by 31 unit tests and three deliberate code breaks, each caught: a signature check that always passes, a retried reference opening a second payment, and a known event accepted without its data.
 
-### 8.3 Deposit via webhook
+### 8.3 Deposit via webhook — *Built (start + apply; the webhook endpoint is Stage 15)*
 
 ```mermaid
 sequenceDiagram
     participant C as Client
-    participant P as payment.service
+    participant P as deposit.service
     participant PSP as Provider
     participant W as Webhook endpoint
     participant Q as Worker
 
     C->>P: POST /payments/deposits
-    P->>PSP: initialize()
-    P-->>C: Transaction PENDING + checkout reference
+    P->>PSP: initializeDeposit()
+    P-->>C: Transaction PROCESSING + checkout URL
     PSP->>W: webhook (raw body + signature)
     W->>W: verify HMAC (constant time), validate payload
     W->>W: insert WebhookEvent (unique provider+eventId)
     W-->>PSP: 200 immediately (duplicates: 200, no-op)
     W->>Q: process-webhook job
-    Q->>P: BEGIN · ledger.post(Dr settlement, Cr wallet) · COMPLETED · outbox · COMMIT
+    Q->>P: applyEvent(): BEGIN · lock · ledger.post(Dr settlement, Cr wallet) · COMPLETED · outbox · COMMIT
 ```
 
 The **webhook decides the deposit's outcome**, never the client's redirect.
+
+[deposit.service.ts](../src/modules/payments/deposit.service.ts):
+
+| Step | Design |
+|---|---|
+| Start (`POST /payments/deposits`) | Inside the idempotency transaction: wallet (`KYC_REQUIRED` without one), wallet status (`WALLET_FROZEN`/`WALLET_CLOSED`), an early max-balance check (`LIMIT_MAX_BALANCE_EXCEEDED`, naming the limit), the active provider row, then the `DEPOSIT` transaction. Only then the provider, with **our reference** as its idempotency key; then the `payments` row (`INBOUND`, provider reference, checkout URL) and `PENDING → PROCESSING`; audit `deposit.initiated` with the request context |
+| Provider call inside the transaction | Deliberate. The row exists first, so the reference is ours and unique, and no row locks are held during the call. If the provider is down (`503`, `Retry-After: 30`) or COMMIT fails, **nothing is kept** and the key is freed. The provider may keep an orphan session, which is harmless: its checkout URL never reached the customer. The alternative (commit `PENDING`, call, update) leaves deposits without a checkout URL to clean up. Cost: a pooled connection is busy for the provider's latency, so real adapters need a short timeout |
+| Apply (`applyEvent`) | One transaction. Find the payment by (provider, provider reference) (none → `UNMATCHED`), then **lock the transaction row**, so two deliveries can't both credit (the second sees `COMPLETED` → `ALREADY_APPLIED`) |
+| Success | Lock the wallet, re-check its status and the max balance **against the current balance**, then post `Dr PROVIDER_SETTLEMENT:<provider>:<ccy> / Cr wallet` for the deposit's **own** amount → `COMPLETED`; audit `deposit.completed` (SYSTEM); outbox `deposit.completed` |
+| Failure | `FAILED` with the provider's reason (or a generic one); nothing posted; audit `deposit.failed`; outbox `deposit.failed` |
+| Held for review | Never credited, never silently refused. Recorded on `payments.metadata.review` (what the provider claimed, as it said it) and as audit `deposit.review_required`; the deposit stays as it was. Reasons: `REFERENCE_MISMATCH`, `AMOUNT_MISMATCH`, `CURRENCY_MISMATCH`, `NOT_A_DEPOSIT` (e.g. a payout event), `SUCCESS_AFTER_FAILURE` (money may have arrived after we gave up), `FAILURE_AFTER_SUCCESS`, `WALLET_FROZEN`/`WALLET_CLOSED` (frozen since it started), `MAX_BALANCE` (two open deposits that only fit one at a time). A later correct event still applies, e.g. a provider re-notifying after the wallet is unfrozen |
+
+Nothing is refused at completion on purpose: once the provider has the money, refusing it would leave it nowhere. A person decides (credit later, or return it). The admin queue for held deposits comes with Admin (Stage 19).
+
+Verified on PostgreSQL 18.3: 28 checks (start, replay, every refusal, provider outage with nothing kept and the key reusable, success with the exact entries and events, re-notifications, failure, late success, wrong amount then the right one, wrong reference, payout event, unknown reference, frozen then unfrozen, two deposits over the max balance, two simultaneous deliveries, the books balanced). Three deliberate code breaks were each caught: the amount check removed, the "already completed" guard removed (a re-notification then crashes instead of being a no-op), and the wallet-status check at completion removed (the ledger's own freeze rule then refuses, so even then no money moved).
 
 ### 8.4 Withdrawal
 
@@ -789,6 +804,7 @@ This reflects the repository as it stands, not the design.
 | Ledger triggers can be disabled by a database superuser | They protect against application bugs, not a compromised DBA account. The app must run as a non-owner role (Stage 25) |
 | A native PostgreSQL 16 Windows service (`postgresql-x64-16`) occupies port 5432 on the development machine, listening on all interfaces | Fundra's Docker database uses **5433** instead. That service is outside this project, but it's reachable from the local network |
 | Prisma 7.10's query engine sends overlapping queries on one interactive transaction's connection (e.g. loading `include`d relations); `pg` 8 logs a deprecation warning and **`pg` 9 will reject it** | Found in Stage 13 by `--trace-deprecation`: the stack is inside Prisma, not Fundra (Fundra's own in-transaction `Promise.all`s were made sequential). Don't upgrade `pg` to 9 until Prisma serialises in-transaction queries |
+| Deposits held for review, and abandoned checkouts, stay `PROCESSING` | Resolving held deposits is an admin action (Stage 19). Expiring abandoned ones (ask `getPaymentStatus`, then fail them) belongs to the `reconcile-transactions` job |
 | Docker isn't installed on the development machine; PostgreSQL and Redis aren't available | Integration work is blocked until they are set up |
 | No `.env.example` (removed by choice) | New contributors can't see which variables are required; `config/env.ts` validation will be the only source of truth |
 | No tests written yet; Testcontainers not installed (Stage 6) | `passWithNoTests` is on in `vitest.config.ts`, so empty test runs pass. Turn it off once every project has tests |

@@ -14,6 +14,7 @@ import { corsPolicy, jsonBody, securityHeaders } from './middleware/security.mid
 import type { OtpStore } from './modules/auth/otp.ts';
 import type { DocumentStorage } from './modules/kyc/document-storage.ts';
 import type { KycProvider } from './modules/kyc/providers/kyc-provider.ts';
+import type { PaymentProvider } from './modules/payments/providers/payment-provider.ts';
 import { createHealthRouter } from './modules/health/health.routes.ts';
 import type { HealthService } from './modules/health/health.service.ts';
 import type { MessageSender } from './modules/notifications/notification.types.ts';
@@ -32,6 +33,8 @@ export interface AppDependencies {
   kycProvider: KycProvider;
   /** KYC document files: local disk now, S3 later; in memory in tests. */
   documentStorage: DocumentStorage;
+  /** Deposits and withdrawals (Stage 14); the mock until a sandbox provider is added. */
+  paymentProvider: PaymentProvider;
 }
 
 /** Middleware order is deliberate; see docs/ARCHITECTURE.md §5. */
@@ -43,6 +46,7 @@ export function createApp({
   messageSender,
   kycProvider,
   documentStorage,
+  paymentProvider,
 }: AppDependencies): Express {
   const app = express();
 
@@ -70,6 +74,7 @@ export function createApp({
       messageSender,
       kycProvider,
       documentStorage,
+      paymentProvider,
     }),
   );
 

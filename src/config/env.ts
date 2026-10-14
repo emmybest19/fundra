@@ -57,6 +57,12 @@ const envSchema = z.object({
   KYC_HMAC_KEY: z.string().min(32, 'Must be at least 32 characters of random data'),
   // Where KYC documents are stored (local disk until S3, Stage 25). Never served over HTTP.
   KYC_STORAGE_DIR: z.string().default('storage/kyc'),
+  // Payment provider for deposits and withdrawals (Stage 14). Only the mock exists; it moves no
+  // real money, so the server logs a warning at startup.
+  PAYMENT_PROVIDER: z.enum(['mock']).default('mock'),
+  // The provider's webhook signing secret (HMAC). For the mock, any 32+ characters of random
+  // data; for a real provider, the secret from its dashboard.
+  PAYMENT_WEBHOOK_SECRET: z.string().min(32, 'Must be at least 32 characters of random data'),
 });
 
 export type Env = Readonly<z.infer<typeof envSchema>>;

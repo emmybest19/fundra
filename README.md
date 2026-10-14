@@ -119,7 +119,7 @@ docs/              project definition, architecture, case study, API, security
 | Ledger (Stage 11): `ledger.post()` (invariants, ordered wallet locks, status and funds under the lock, cached balances) | In progress (items 1–4 of 5 done; the parallel-debit concurrency test needs real PostgreSQL) |
 | Transactions (Stage 12): record, references, state machine, history endpoints | Done |
 | Transfers (Stage 13): `POST /transfers` (idempotent, limits, fees), recipient lookup, reversals | Done. The reversal endpoint arrives with Admin (Stage 19) |
-| Payments (Stage 14): `PaymentProvider` contract + mock | In progress (item 1 of 4 done; deposits next) |
+| Payments (Stage 14): `PaymentProvider` contract + mock, deposits (`POST /payments/deposits`) | In progress (items 1–2 of 4 done; withdrawals next). Deposits complete through provider events; the webhook endpoint arrives in Stage 15 |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).
@@ -221,6 +221,8 @@ Configuration lives in a local `.env` file, which git ignores. `src/config/env.t
 | `KYC_HMAC_KEY` | **yes** | — | HMAC key for BVN/NIN uniqueness, ≥32 characters of random data; different from the other secrets. Changing it breaks duplicate detection for numbers already stored |
 | `KYC_PROVIDER` | no | `mock` | Only `mock` exists. It approves almost anyone, so the server logs a warning at startup |
 | `KYC_STORAGE_DIR` | no | `storage/kyc` | Where KYC documents are written (git-ignored). Never served over HTTP |
+| `PAYMENT_PROVIDER` | no | `mock` | Only `mock` exists. It moves no real money, so the server logs a warning at startup |
+| `PAYMENT_WEBHOOK_SECRET` | **yes** | — | The payment provider's webhook signing secret (HMAC), ≥32 characters. For the mock, any random data (generate it like `JWT_ACCESS_SECRET`); for a real provider, the secret from its dashboard |
 | `POSTGRES_USER` · `POSTGRES_PASSWORD` · `POSTGRES_DB` · `REDIS_PASSWORD` | for Docker | — | Read by `docker-compose.yml`, not the app |
 | `POSTGRES_PORT` · `REDIS_PORT` | no | `5432` · `6379` | Host ports used by `docker-compose.yml`. Set `POSTGRES_PORT=5433` if another PostgreSQL already uses 5432 (the case on the original dev machine) |
 
