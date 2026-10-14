@@ -83,7 +83,7 @@ Legend: `[x]` done · `[ ]` to do
 - [ ] **Concurrency test:** parallel debits never overdraw, ledger always balances. **Deferred (2026-10-14): needs real PostgreSQL (Docker)**; PGlite serves every connection from one backend, so it can't run postings in parallel. Belongs with the Stage 6 Testcontainers suite
 
 ### Stage 12 — Transactions
-- [ ] Transaction record, references, status state machine
+- [x] Transaction record, references, status state machine: creation with per-type shape checks and reversal mirroring, Lagos-dated references, transition table (+ instant `PENDING → COMPLETED/FAILED`) with posting/hold checks per status; 32 checks on PostgreSQL 18.3
 - [ ] History endpoints (cursor pagination, filters)
 
 ### Stage 13 — Transfers

@@ -465,19 +465,31 @@ post(tx, { transactionId, entries: [{ ledgerAccountId, direction, amount }] })
 
 Verified on PostgreSQL 18.3 (PGlite): 25 checks (deposit, transfer with fee, reversal through a frozen wallet, exact-zero spending, holds respected, second posting refused, currency mismatch, cached balance = Σ entries for every wallet, the whole ledger balanced) and three deliberate code breaks. Two of them show the database holding the line on its own: with the app's invariant check removed, the deferred `ledger_entries_balanced` trigger refused the unbalanced posting at commit; with the funds check removed, the wallet balance CHECK refused the overdraft. Nothing was written either time. Under concurrency, PGlite serves every connection from one backend, so parallel debits are proven on real PostgreSQL in item 5.
 
-### 7.8 Transaction state machine
+### 7.8 Transaction state machine — *Built*
 
 ```mermaid
 stateDiagram-v2
     [*] --> PENDING
     PENDING --> PROCESSING
+    PENDING --> COMPLETED: instant (P2P)
+    PENDING --> FAILED: instant
     PENDING --> CANCELLED
     PROCESSING --> COMPLETED
     PROCESSING --> FAILED
     COMPLETED --> REVERSED: linked REVERSAL transaction
 ```
 
-Transitions are enforced by a transition table in `transaction.service`. References (`FND-TRX-YYYYMMDD-XXXXXX`) have a unique index and are regenerated on the rare collision.
+[transaction.service.ts](../src/modules/transactions/transaction.service.ts) runs inside the caller's transaction, next to the ledger posting it belongs to. The ledger moves the money; this records what the operation is and where it stands.
+
+| Concern | Design |
+|---|---|
+| Transitions | One table ([transaction.types.ts](../src/modules/transactions/transaction.types.ts)). `PENDING → COMPLETED/FAILED` directly, because an instant P2P transfer is created, posted and finished in one database transaction. Final: `FAILED`, `CANCELLED`, `REVERSED`; `PROCESSING` (with a provider) can't be cancelled. An illegal move, such as a duplicate webhook finishing a finished transaction, is `409` |
+| Money behind a status | Checked under the row lock: `COMPLETED` needs its ledger posting and no active hold; `FAILED`/`CANCELLED` need no posting (reverse instead) and no active hold (release first); `REVERSED` needs a `COMPLETED` reversal. `FAILED` needs a reason (1–500 characters); `COMPLETED` stamps `completed_at` |
+| Shape | Per type: deposits and refunds have only a destination wallet; withdrawals, payments and fees only a source; transfers both, and different. Wallets must exist and be in the transaction's currency. A `REVERSAL` mirrors a `COMPLETED`, non-reversal original (same currency, wallets swapped, never more than amount + fee); the unique `reversal_of_id` allows one per original |
+| References | `FND-TRX-` + the **Lagos** business date + 6 random hex digits (16.7M a day); a taken one is skipped (up to 5 tries), and the unique index is the backstop |
+| Errors | A caller breaking a rule throws `TransactionInvariantError` (a bug, 500); user input is validated before this by the money endpoints |
+
+Verified on PostgreSQL 18.3 (PGlite): 32 checks (every shape refusal, each transition with the money check behind it, reversal mirroring and uniqueness, references against the database CHECK), 6 unit tests, and three deliberate code breaks, each caught: completing without a posting, ignoring an active hold, dating references in UTC.
 
 ---
 
