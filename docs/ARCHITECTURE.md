@@ -556,7 +556,22 @@ sequenceDiagram
     end
 ```
 
-### 8.2 Deposit via webhook
+### 8.2 Payment provider — *Built (contract + mock)*
+
+Deposits, withdrawals and (later) payments reach the outside world only through `PaymentProvider` ([payment-provider.ts](../src/modules/payments/providers/payment-provider.ts)). Adapters translate a provider's API to it; a Paystack or Flutterwave sandbox later needs only a new adapter.
+
+| Concern | Design |
+|---|---|
+| Calls | `initializeDeposit` (checkout URL), `resolveBankAccount` (name enquiry before a withdrawal), `sendPayout`, `getPaymentStatus` (reconciliation when a webhook never arrives). The contract grows with payments (Stage 14 item 4), not before |
+| Retries | Fundra's transaction reference is the provider's idempotency key: a repeated call with the same reference returns the same payment, and a reference reused for different money is refused. A timed-out payout can be retried without paying twice |
+| Payouts | Asynchronous: `PENDING` means accepted, and the webhook settles it. `FAILED` means refused on the spot, so no money left |
+| Outages | `PaymentProviderUnavailableError`: whether money moved is unknown, so the attempt stays open for reconciliation; mapped to 503 |
+| Webhooks | `verifyWebhook` checks the signature over the **exact bytes** received, in constant time. `parseWebhook` turns a verified body into a normalized event: deposit or payout, succeeded or failed, with provider reference, Fundra reference, amount (minor-unit string → `bigint`, exact beyond 2^53) and currency. Event types Fundra doesn't act on come back as `OTHER`, and malformed bodies as `null`. The processor still checks amount and currency against the transaction |
+| Mock | Paystack-shaped: HMAC-SHA512 in `x-mock-signature`, events `charge.success/failed` and `transfer.success/failed`. Account numbers decide payouts: `0000000001` doesn't resolve, `…02` is accepted then fails, `…03` is refused on the spot, and any other 10 digits succeed. Checkout URLs use the reserved `.invalid` domain. Test hooks: `settle()` finishes a payment and returns its signed webhook (optionally failed, or with a different amount); `signedWebhook()` signs any payload; `setAvailable(false)` simulates an outage |
+
+Verified by 31 unit tests and three deliberate code breaks, each caught: a signature check that always passes, a retried reference opening a second payment, and a known event accepted without its data.
+
+### 8.3 Deposit via webhook
 
 ```mermaid
 sequenceDiagram
@@ -579,7 +594,7 @@ sequenceDiagram
 
 The **webhook decides the deposit's outcome**, never the client's redirect.
 
-### 8.3 Withdrawal
+### 8.4 Withdrawal
 
 1. Create the transaction (`PENDING`) and a **Hold**; available balance drops immediately.
 2. Call `provider.payout()`.

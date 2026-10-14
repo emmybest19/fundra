@@ -91,7 +91,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Reversals: admin service (`transactions:reverse`; endpoint in Stage 19) for completed transfers: REVERSAL + separate fee REFUND, original → REVERSED, exempt from limits and freezes but never overdraws, no self-action; 16 checks on PostgreSQL 18.3
 
 ### Stage 14 — Payments
-- [ ] `PaymentProvider` interface + `MockPaymentProvider`
+- [x] `PaymentProvider` interface + `MockPaymentProvider`: deposits, name enquiry, payouts, status, webhook verify/parse; reference-idempotent; Paystack-shaped signed webhooks from test hooks; 31 tests
 - [ ] Deposits (pending → webhook completes)
 - [ ] Withdrawals (hold → payout → settle/release)
 - [ ] Payments + refunds
