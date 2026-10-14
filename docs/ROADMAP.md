@@ -87,7 +87,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] History endpoints (cursor pagination, filters): `GET /transactions` (keyset on created_at+id, opaque cursor, wallet/type/status/direction/date filters) and `GET /transactions/:id`; caller-side view; another user's money visible only once it arrived; 21 checks over HTTP on PostgreSQL 18.3
 
 ### Stage 13 — Transfers
-- [ ] `POST /transfers`: checks, limits, idempotency, atomic posting, fees
+- [x] `POST /transfers`: checks, limits, idempotency, atomic posting, fees. Plus `GET /transfers/recipient` (D2 lookup, check-digit typo refusal, rate-limited); limits checked under the wallet locks (daily outflow summed under the sender's lock); recipient refusals generic; deadlocks retried ×3; 26 checks over HTTP on PostgreSQL 18.3
 - [ ] Reversals
 
 ### Stage 14 — Payments

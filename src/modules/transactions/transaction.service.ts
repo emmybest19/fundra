@@ -138,10 +138,9 @@ export async function transitionTransaction(
   }
 
   if (to === 'COMPLETED' || to === 'FAILED' || to === 'CANCELLED') {
-    const [entries, activeHold] = await Promise.all([
-      tx.ledgerEntry.count({ where: { transactionId } }),
-      tx.hold.count({ where: { transactionId, status: 'ACTIVE' } }),
-    ]);
+    // One at a time: a transaction's queries share one connection (pg@9 will reject overlap).
+    const entries = await tx.ledgerEntry.count({ where: { transactionId } });
+    const activeHold = await tx.hold.count({ where: { transactionId, status: 'ACTIVE' } });
     if (activeHold > 0) {
       throw new TransactionInvariantError(
         `transaction ${transactionId} still has an ACTIVE hold; settle or release it first`,
@@ -330,48 +329,75 @@ export class TransactionService {
   }
 
   /** One of the user's transactions, under the same visibility rule; otherwise a 404. */
-  async get(userId: string, transactionId: string): Promise<TransactionView> {
-    const mine = await this.#myWallets(userId);
-    const { outgoing, incoming } = visibleTo([...mine.keys()]);
-    const row = await this.#db.transaction.findFirst({
-      where: { id: transactionId, OR: [outgoing, incoming] },
-      include: WITH_PARTIES,
-    });
-    if (row === null) throw new NotFoundError('Transaction not found.');
-    const [view] = await this.#views([row], mine);
-    if (view === undefined) throw new NotFoundError('Transaction not found.');
-    return view;
+  get(userId: string, transactionId: string): Promise<TransactionView> {
+    return transactionViewFor(this.#db, userId, transactionId);
   }
 
-  /** The user's wallets (id → ledger account). A walletId filter must be one of theirs. */
-  async #myWallets(userId: string, walletId?: string): Promise<Map<string, string>> {
-    const wallets = await this.#db.wallet.findMany({
-      where: { userId, ...(walletId === undefined ? {} : { id: walletId }) },
-      select: { id: true, ledgerAccountId: true },
-    });
-    if (walletId !== undefined && wallets.length === 0) {
-      throw new NotFoundError('Wallet not found.');
-    }
-    return new Map(wallets.map((w) => [w.id, w.ledgerAccountId]));
+  #myWallets(userId: string, walletId?: string): Promise<Map<string, string>> {
+    return walletsOf(this.#db, userId, walletId);
   }
 
-  /** Views with the caller's balance after each posting (from their own ledger entry). */
-  async #views(
-    rows: TransactionWithParties[],
-    mine: Map<string, string>,
-  ): Promise<TransactionView[]> {
-    const entries =
-      rows.length === 0
-        ? []
-        : await this.#db.ledgerEntry.findMany({
-            where: {
-              transactionId: { in: rows.map((r) => r.id) },
-              ledgerAccountId: { in: [...mine.values()] },
-            },
-            select: { transactionId: true, balanceAfter: true },
-          });
-    const after = new Map(entries.map((e) => [e.transactionId, e.balanceAfter]));
-    const myIds = new Set(mine.keys());
-    return rows.map((row) => toTransactionView(row, myIds, after.get(row.id) ?? null));
+  #views(rows: TransactionWithParties[], mine: Map<string, string>): Promise<TransactionView[]> {
+    return viewsOf(this.#db, rows, mine);
   }
+}
+
+type Reader = Pick<Tx, 'wallet' | 'transaction' | 'ledgerEntry'>;
+
+/**
+ * One transaction as `userId` sees it (visibility rule above), or a 404. Works inside a
+ * database transaction too, so a money endpoint can return the view of what it just did.
+ */
+export async function transactionViewFor(
+  db: Reader,
+  userId: string,
+  transactionId: string,
+): Promise<TransactionView> {
+  const mine = await walletsOf(db, userId);
+  const { outgoing, incoming } = visibleTo([...mine.keys()]);
+  const row = await db.transaction.findFirst({
+    where: { id: transactionId, OR: [outgoing, incoming] },
+    include: WITH_PARTIES,
+  });
+  if (row === null) throw new NotFoundError('Transaction not found.');
+  const [view] = await viewsOf(db, [row], mine);
+  if (view === undefined) throw new NotFoundError('Transaction not found.');
+  return view;
+}
+
+/** The user's wallets (id → ledger account). A walletId filter must be one of theirs. */
+async function walletsOf(
+  db: Reader,
+  userId: string,
+  walletId?: string,
+): Promise<Map<string, string>> {
+  const wallets = await db.wallet.findMany({
+    where: { userId, ...(walletId === undefined ? {} : { id: walletId }) },
+    select: { id: true, ledgerAccountId: true },
+  });
+  if (walletId !== undefined && wallets.length === 0) {
+    throw new NotFoundError('Wallet not found.');
+  }
+  return new Map(wallets.map((w) => [w.id, w.ledgerAccountId]));
+}
+
+/** Views with the caller's balance after each posting (from their own ledger entry). */
+async function viewsOf(
+  db: Reader,
+  rows: TransactionWithParties[],
+  mine: Map<string, string>,
+): Promise<TransactionView[]> {
+  const entries =
+    rows.length === 0
+      ? []
+      : await db.ledgerEntry.findMany({
+          where: {
+            transactionId: { in: rows.map((r) => r.id) },
+            ledgerAccountId: { in: [...mine.values()] },
+          },
+          select: { transactionId: true, balanceAfter: true },
+        });
+  const after = new Map(entries.map((e) => [e.transactionId, e.balanceAfter]));
+  const myIds = new Set(mine.keys());
+  return rows.map((row) => toTransactionView(row, myIds, after.get(row.id) ?? null));
 }

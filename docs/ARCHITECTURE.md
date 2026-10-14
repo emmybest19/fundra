@@ -506,7 +506,20 @@ Verified on PostgreSQL 18.3 (PGlite): 32 checks (every shape refusal, each trans
 
 ## 8. Key flows — *Designed*
 
-### 8.1 P2P transfer
+### 8.1 P2P transfer — *Built*
+
+[transfer.service.ts](../src/modules/transfers/transfer.service.ts), in one database transaction inside `IdempotencyService.run`:
+
+1. Sender's wallet (none → `403 KYC_REQUIRED`); recipient by handle or account number (a typo is refused by the check digit before any lookup; closed wallets and disabled accounts → `404 RECIPIENT_NOT_FOUND`); not yourself.
+2. Fee from the active `TRANSFER` rule: flat + basis points rounded **down**, clamped to min/max; a missing rule fails closed.
+3. `lockWallets(sender, recipient)`, then under the locks: the sender's per-transaction and **daily** limits (today's outflow is summed while the sender's wallet is locked, so two parallel sends can't jointly pass the limit), and the recipient's max balance.
+4. Transaction (`PENDING`) + `transfers` row → `ledger.post` (sender −(amount+fee), recipient +amount, `FEE_REVENUE` +fee) → `COMPLETED` → audit `transfer.completed` → outbox `transfer.completed`.
+5. The response (the sender's view of the new transaction) is stored with the idempotency key in the same transaction.
+
+Refusals (funds, limits, recipient) are 4xx with **nothing saved**, not `FAILED` records: no money moved and the client is told immediately; the key is freed for a retry. A refusal caused by the **recipient** (max balance, frozen or closed wallet) reaches the sender only as `RECIPIENT_CANNOT_RECEIVE`. Deadlocks and lock timeouts are retried server-side up to 3 times (the claim is released on failure, so each attempt starts clean). Verified over HTTP on PostgreSQL 18.3: 26 checks (lookups, replay and key reuse, every refusal moving nothing, the daily limit reached exactly then exceeded by a kobo, a fee split with rounding, the books balanced) and three deliberate code breaks, each caught: today's outflow not counted, a recipient's refusal not made generic, idempotency bypassed (money moved twice).
+
+The diagram below is the original design; step 3 above refines its "check limits" step.
+
 
 ```mermaid
 sequenceDiagram
@@ -748,6 +761,7 @@ This reflects the repository as it stands, not the design.
 | The 49 migration checks (30 constraints + 19 triggers) live in throwaway scripts | They need porting to `tests/integration` with Testcontainers (Stage 6) to keep guarding future migrations |
 | Ledger triggers can be disabled by a database superuser | They protect against application bugs, not a compromised DBA account. The app must run as a non-owner role (Stage 25) |
 | A native PostgreSQL 16 Windows service (`postgresql-x64-16`) occupies port 5432 on the development machine, listening on all interfaces | Fundra's Docker database uses **5433** instead. That service is outside this project, but it's reachable from the local network |
+| Prisma 7.10's query engine sends overlapping queries on one interactive transaction's connection (e.g. loading `include`d relations); `pg` 8 logs a deprecation warning and **`pg` 9 will reject it** | Found in Stage 13 by `--trace-deprecation`: the stack is inside Prisma, not Fundra (Fundra's own in-transaction `Promise.all`s were made sequential). Don't upgrade `pg` to 9 until Prisma serialises in-transaction queries |
 | Docker isn't installed on the development machine; PostgreSQL and Redis aren't available | Integration work is blocked until they are set up |
 | No `.env.example` (removed by choice) | New contributors can't see which variables are required; `config/env.ts` validation will be the only source of truth |
 | No tests written yet; Testcontainers not installed (Stage 6) | `passWithNoTests` is on in `vitest.config.ts`, so empty test runs pass. Turn it off once every project has tests |

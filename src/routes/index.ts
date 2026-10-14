@@ -20,6 +20,9 @@ import type { MessageSender } from '../modules/notifications/notification.types.
 import { createUserRouter } from '../modules/users/user.routes.ts';
 import { createTransactionRouter } from '../modules/transactions/transaction.routes.ts';
 import { TransactionService } from '../modules/transactions/transaction.service.ts';
+import { createTransferRouter } from '../modules/transfers/transfer.routes.ts';
+import { TransferService } from '../modules/transfers/transfer.service.ts';
+import { IdempotencyService } from '../common/idempotency/idempotency.service.ts';
 import { UserService } from '../modules/users/user.service.ts';
 import { createWalletRouter } from '../modules/wallets/wallet.routes.ts';
 import { WalletService } from '../modules/wallets/wallet.service.ts';
@@ -88,6 +91,15 @@ export function createApiRouter({
   router.use(
     '/transactions',
     createTransactionRouter({ transactions: new TransactionService(db), authenticate }),
+  );
+
+  router.use(
+    '/transfers',
+    createTransferRouter({
+      transfers: new TransferService(db, new IdempotencyService(db)),
+      authenticate,
+      rateLimitStore,
+    }),
   );
 
   return router;

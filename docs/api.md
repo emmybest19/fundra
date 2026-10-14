@@ -91,6 +91,9 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 422 | `LIMIT_MAX_BALANCE_EXCEEDED` | A deposit would take your balance over your tier's maximum |
 | 422 | `RECIPIENT_CANNOT_RECEIVE` | The recipient can't receive this amount; deliberately says nothing about their tier, limit or balance |
 | 403 | `WALLET_SELF_ACTION` | Admins can't change the status of their own wallet |
+| 403 | `KYC_REQUIRED` | You need a wallet (KYC Tier 1) for this |
+| 404 | `RECIPIENT_NOT_FOUND` | No one can receive at that handle or account number |
+| 422 | `SELF_TRANSFER` | A transfer to yourself |
 | 409 | `KYC_TIER_ORDER` | Tiers are taken in order; complete the previous tier first |
 | 409 | `KYC_TIER_ALREADY_APPROVED` | You're already verified at this tier or higher |
 | 409 | `KYC_UNDER_REVIEW` | A Tier 3 submission is being reviewed; documents and address can't change until it's decided |
@@ -533,6 +536,59 @@ Errors: `415 UNSUPPORTED_MEDIA_TYPE`, `413 PAYLOAD_TOO_LARGE`, `422` (empty file
 **202** with the `kyc` object (`status: "PENDING"`, `requestedTier: 3`). A reviewer decides. While it's `PENDING` or `IN_REVIEW`, documents and the address can't change (`409 KYC_UNDER_REVIEW`). If it's rejected, `rejectionReason` says what to fix: upload again and resubmit.
 
 Errors: `422` (missing documents are listed under `documents`), `409 KYC_TIER_ORDER`, `409 KYC_TIER_ALREADY_APPROVED`, `409 KYC_UNDER_REVIEW`.
+
+### Transfers (send money)
+
+Both routes need a verified email and phone (`403 ACCOUNT_NOT_ACTIVE`).
+
+#### `GET /api/v1/transfers/recipient?handle=bola` · `?accountNumber=0123456789`
+
+Confirms who you're paying before you send. Returns **only** their name and handle:
+
+```json
+{ "data": { "recipient": { "name": "Bola Adeyemi", "handle": "bola" } } }
+```
+
+- An account number with a wrong check digit (a typo) is `422`, before any lookup.
+- `404 RECIPIENT_NOT_FOUND` if nobody can receive at that handle or number (no wallet, closed, or the account is disabled).
+- Rate limit: 60 lookups per hour.
+
+#### `POST /api/v1/transfers` (idempotent)
+
+```http
+POST /api/v1/transfers
+Idempotency-Key: 3f6c2b1e-9a7d-4c1e-8f2a-5b6c7d8e9f00
+```
+
+```json
+{ "recipientHandle": "bola", "amount": "1000000", "currency": "NGN", "description": "Lunch" }
+```
+
+- Exactly one of `recipientHandle` or `recipientAccountNumber` (D2).
+- `amount` in kobo as a string (D1); `description` optional, at most 140 characters.
+- The fee comes from the fee schedule (₦0 for transfers today) and is added on top: your wallet is debited `amount + fee`, the recipient gets `amount`.
+- Rate limit: 20 per minute.
+
+**201** with the transfer as it appears in your history (same shape as [`GET /transactions/:id`](#get-apiv1transactionsid)):
+
+```json
+{ "data": { "transfer": { "id": "…", "reference": "FND-TRX-…", "type": "TRANSFER", "status": "COMPLETED", "direction": "OUT", "amount": "1000000", "fee": "0", "total": "1000000", "counterparty": { "name": "Bola Adeyemi", "handle": "bola" }, "balanceAfter": "19000000", "…": "…" } } }
+```
+
+Retrying with the same key replays this response (`Idempotent-Replayed: true`) and moves nothing again; see [Idempotency](#idempotency). A refused transfer moves nothing and frees the key, so the same request can be retried once the problem is fixed.
+
+| Error | When |
+|---|---|
+| `400 IDEMPOTENCY_KEY_REQUIRED` | No `Idempotency-Key` header |
+| `403 KYC_REQUIRED` | You don't have a wallet yet: complete KYC Tier 1 |
+| `404 RECIPIENT_NOT_FOUND` | Nobody can receive at that handle or account number |
+| `422 SELF_TRANSFER` | The recipient is you |
+| `422 INSUFFICIENT_FUNDS` | Your available balance (excluding money on hold) can't cover amount + fee |
+| `422 LIMIT_PER_TRANSACTION_EXCEEDED` / `LIMIT_DAILY_OUTFLOW_EXCEEDED` | Over your tier's limits (fees included; the day is Lagos time). The message says how much is left today |
+| `422 RECIPIENT_CANNOT_RECEIVE` | The recipient can't receive this amount right now. Deliberately says nothing about them |
+| `422 WALLET_FROZEN` / `WALLET_CLOSED` | Your own wallet is restricted or closed |
+| `422 IDEMPOTENCY_KEY_REUSED` | The key was used for a different request |
+| `503 SERVICE_UNAVAILABLE` | The database stayed busy after three tries; retry with the same key |
 
 ### Transactions (your history)
 
