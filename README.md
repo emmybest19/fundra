@@ -117,7 +117,8 @@ docs/              project definition, architecture, case study, API, security
 | KYC (Stage 9): `KycProvider` + mock, tiers 1–3, documents, review lifecycle, tier limits | Done. Reviewer endpoints arrive with Admin (Stage 19) |
 | Wallets (Stage 10): created with Tier 1 (own ledger account, check-digit account number), status lifecycle, balance endpoints | Done. Freeze/unfreeze endpoints arrive with Admin (Stage 19) |
 | Ledger (Stage 11): `ledger.post()` (invariants, ordered wallet locks, status and funds under the lock, cached balances) | In progress (items 1–4 of 5 done; the parallel-debit concurrency test needs real PostgreSQL) |
-| Transactions (Stage 12): record, references, state machine | In progress (item 1 of 2 done; history endpoints next) |
+| Transactions (Stage 12): record, references, state machine, history endpoints | Done |
+| Transfers (Stage 13) | Next |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).

@@ -2,14 +2,24 @@
 // status changes run inside the caller's transaction, next to the ledger posting they belong
 // to (Stage 13 transfers, Stage 14 payments). The ledger (src/modules/ledger) moves the money;
 // this module records what the operation is and where it stands.
-import { ConflictError } from '../../common/errors/index.ts';
-import type { Prisma, Transaction, TransactionStatus } from '../../generated/prisma/client.ts';
+import { ConflictError, NotFoundError } from '../../common/errors/index.ts';
+import { encodeCursor } from '../../common/utils/cursor.ts';
+import type {
+  Prisma,
+  PrismaClient,
+  Transaction,
+  TransactionStatus,
+} from '../../generated/prisma/client.ts';
+import type { HistoryQuery } from './transaction.schema.ts';
 import {
   canTransactionTransition,
   generateReference,
   TRANSACTION_SHAPES,
   TransactionInvariantError,
+  toTransactionView,
   type NewTransaction,
+  type TransactionView,
+  type TransactionWithParties,
 } from './transaction.types.ts';
 
 type Tx = Prisma.TransactionClient;
@@ -232,4 +242,136 @@ async function freeReference(tx: Tx, now: number): Promise<string> {
     if (taken === null) return reference;
   }
   throw new Error(`No free transaction reference after ${String(REFERENCE_ATTEMPTS)} attempts`);
+}
+
+// ─── Reading (the signed-in user's history) ──────────────────────────────────────────────
+
+/** Incoming money from another user is listed once it actually arrived. */
+const VISIBLE_INCOMING_P2P: readonly TransactionStatus[] = ['COMPLETED', 'REVERSED'];
+
+const PARTY = {
+  select: { id: true, user: { select: { firstName: true, lastName: true, handle: true } } },
+} as const;
+const WITH_PARTIES = {
+  sourceWallet: PARTY,
+  destinationWallet: PARTY,
+  reversalOf: { select: { id: true, reference: true } },
+} as const satisfies Prisma.TransactionInclude;
+
+/** What the user may see: everything leaving their wallets; arrivals per the rule above. */
+function visibleTo(walletIds: readonly string[]): {
+  outgoing: Prisma.TransactionWhereInput;
+  incoming: Prisma.TransactionWhereInput;
+} {
+  return {
+    outgoing: { sourceWalletId: { in: [...walletIds] } },
+    incoming: {
+      destinationWalletId: { in: [...walletIds] },
+      OR: [{ sourceWalletId: null }, { status: { in: [...VISIBLE_INCOMING_P2P] } }],
+    },
+  };
+}
+
+export interface HistoryPage {
+  transactions: TransactionView[];
+  nextCursor: string | null;
+}
+
+export class TransactionService {
+  readonly #db: PrismaClient;
+
+  constructor(db: PrismaClient) {
+    this.#db = db;
+  }
+
+  /**
+   * The user's transactions across their wallets, newest first, keyset-paginated on
+   * (created_at, id). Visibility: everything leaving their wallets, their own deposits and
+   * refunds at any status, and money from another user only once it arrived (a failed
+   * transfer to them is the sender's business, reason included).
+   */
+  async list(userId: string, query: HistoryQuery): Promise<HistoryPage> {
+    const mine = await this.#myWallets(userId, query.walletId);
+    const { outgoing, incoming } = visibleTo([...mine.keys()]);
+    const sides =
+      query.direction === 'out'
+        ? [outgoing]
+        : query.direction === 'in'
+          ? [incoming]
+          : [outgoing, incoming];
+
+    const filters: Prisma.TransactionWhereInput[] = [{ OR: sides }];
+    if (query.type !== undefined) filters.push({ type: query.type });
+    if (query.status !== undefined) filters.push({ status: query.status });
+    if (query.from !== undefined) filters.push({ createdAt: { gte: query.from } });
+    if (query.to !== undefined) filters.push({ createdAt: { lt: query.to } });
+    if (query.cursor !== undefined) {
+      const { createdAt, id } = query.cursor;
+      // Strictly after the cursor in (created_at DESC, id DESC) order: equal timestamps are
+      // split by id, so a page boundary inside a same-millisecond run skips and repeats nothing.
+      filters.push({ OR: [{ createdAt: { lt: createdAt } }, { createdAt, id: { lt: id } }] });
+    }
+
+    const rows = await this.#db.transaction.findMany({
+      where: { AND: filters },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: query.limit + 1,
+      include: WITH_PARTIES,
+    });
+    const page = rows.slice(0, query.limit);
+    const last = page.at(-1);
+    return {
+      transactions: await this.#views(page, mine),
+      nextCursor:
+        rows.length > query.limit && last !== undefined
+          ? encodeCursor({ createdAt: last.createdAt, id: last.id })
+          : null,
+    };
+  }
+
+  /** One of the user's transactions, under the same visibility rule; otherwise a 404. */
+  async get(userId: string, transactionId: string): Promise<TransactionView> {
+    const mine = await this.#myWallets(userId);
+    const { outgoing, incoming } = visibleTo([...mine.keys()]);
+    const row = await this.#db.transaction.findFirst({
+      where: { id: transactionId, OR: [outgoing, incoming] },
+      include: WITH_PARTIES,
+    });
+    if (row === null) throw new NotFoundError('Transaction not found.');
+    const [view] = await this.#views([row], mine);
+    if (view === undefined) throw new NotFoundError('Transaction not found.');
+    return view;
+  }
+
+  /** The user's wallets (id → ledger account). A walletId filter must be one of theirs. */
+  async #myWallets(userId: string, walletId?: string): Promise<Map<string, string>> {
+    const wallets = await this.#db.wallet.findMany({
+      where: { userId, ...(walletId === undefined ? {} : { id: walletId }) },
+      select: { id: true, ledgerAccountId: true },
+    });
+    if (walletId !== undefined && wallets.length === 0) {
+      throw new NotFoundError('Wallet not found.');
+    }
+    return new Map(wallets.map((w) => [w.id, w.ledgerAccountId]));
+  }
+
+  /** Views with the caller's balance after each posting (from their own ledger entry). */
+  async #views(
+    rows: TransactionWithParties[],
+    mine: Map<string, string>,
+  ): Promise<TransactionView[]> {
+    const entries =
+      rows.length === 0
+        ? []
+        : await this.#db.ledgerEntry.findMany({
+            where: {
+              transactionId: { in: rows.map((r) => r.id) },
+              ledgerAccountId: { in: [...mine.values()] },
+            },
+            select: { transactionId: true, balanceAfter: true },
+          });
+    const after = new Map(entries.map((e) => [e.transactionId, e.balanceAfter]));
+    const myIds = new Set(mine.keys());
+    return rows.map((row) => toTransactionView(row, myIds, after.get(row.id) ?? null));
+  }
 }

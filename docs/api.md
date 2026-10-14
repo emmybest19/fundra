@@ -534,6 +534,53 @@ Errors: `415 UNSUPPORTED_MEDIA_TYPE`, `413 PAYLOAD_TOO_LARGE`, `422` (empty file
 
 Errors: `422` (missing documents are listed under `documents`), `409 KYC_TIER_ORDER`, `409 KYC_TIER_ALREADY_APPROVED`, `409 KYC_UNDER_REVIEW`.
 
+### Transactions (your history)
+
+Every money operation that touches your wallets. Both routes need authentication, and responses are never cached (`Cache-Control: no-store`).
+
+#### `GET /api/v1/transactions`
+
+Newest first, paginated with a cursor.
+
+| Query | Meaning |
+|---|---|
+| `limit` | 1–100, default 20 |
+| `cursor` | `meta.nextCursor` from the previous page, as given |
+| `walletId` | Only this wallet (must be yours, otherwise `404`) |
+| `type` | `DEPOSIT`, `WITHDRAWAL`, `TRANSFER`, `PAYMENT`, `REFUND`, `FEE`, `REVERSAL` |
+| `status` | `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`, `REVERSED`, `CANCELLED` |
+| `direction` | `in` (arriving in your wallet) or `out` (leaving it) |
+| `from`, `to` | ISO 8601 date-times with an offset; `from` inclusive, `to` exclusive |
+
+```json
+{
+  "data": {
+    "transactions": [
+      {
+        "id": "…", "reference": "FND-TRX-20261014-8F92A1", "type": "TRANSFER", "status": "COMPLETED",
+        "direction": "OUT", "amount": "300000", "fee": "5000", "total": "305000", "currency": "NGN",
+        "description": "Rent share", "failureReason": null,
+        "counterparty": { "name": "Bola Adeyemi", "handle": "bola" },
+        "reversalOf": null, "balanceAfter": "695000",
+        "createdAt": "…", "completedAt": "…"
+      }
+    ]
+  },
+  "meta": { "limit": 20, "nextCursor": "WyIyMDI2LTEwLTE0…" }
+}
+```
+
+- `nextCursor` is `null` on the last page. Pass it back unchanged; a malformed cursor is `422`.
+- `direction`, `fee` and `total` are from your side: on money arriving, `fee` is `"0"` (the sender paid it) and `total` is the amount received.
+- `balanceAfter` is your balance once this posted; `null` while pending.
+- `counterparty` is the other person's name and handle, for transfers; `null` for deposits, withdrawals and payments. Their wallet and account details are never shown.
+- `failureReason` appears only on your own outgoing transactions.
+- Money from another user appears once it has arrived (`COMPLETED`, or later `REVERSED`). Their pending or failed attempts to pay you aren't shown. Your own deposits appear at every status, including pending.
+
+#### `GET /api/v1/transactions/:id`
+
+**200** with `{ "data": { "transaction": { … } } }`, the same shape. A transaction that doesn't exist **or that you can't see** is `404 NOT_FOUND`; a malformed ID is `422`.
+
 ### Wallets
 
 Your NGN wallet is created when Tier 1 is approved. Both routes need authentication, and responses are never cached (`Cache-Control: no-store`).

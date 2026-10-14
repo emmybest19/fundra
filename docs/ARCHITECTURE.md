@@ -489,6 +489,17 @@ stateDiagram-v2
 | References | `FND-TRX-` + the **Lagos** business date + 6 random hex digits (16.7M a day); a taken one is skipped (up to 5 tries), and the unique index is the backstop |
 | Errors | A caller breaking a rule throws `TransactionInvariantError` (a bug, 500); user input is validated before this by the money endpoints |
 
+**History** (`GET /transactions`, `GET /transactions/:id`; reference in [api.md](api.md#transactions-your-history)).
+
+| Concern | Design |
+|---|---|
+| Pagination | Keyset on `(created_at, id)`, newest first, `limit + 1` rows to know whether there's a next page. The cursor is opaque (base64url of the last row's position) and only positions the list: every query still applies the caller's filters, so a hand-made cursor can't reach other data. Equal timestamps are split by `id`, so a page boundary inside a same-millisecond run skips and repeats nothing. Served by the `(source_wallet_id, created_at DESC, id DESC)` and `(destination_wallet_id, …)` indexes |
+| Visibility | Everything leaving the caller's wallets; their own deposits and refunds at every status; money from another user only once it arrived (`COMPLETED`/`REVERSED`). A failed transfer to someone is the sender's business, failure reason included. Anything else is a 404 identical to a missing ID |
+| The caller's side | `direction` (`IN`/`OUT`), `fee` only when it's their money going out, `total`, `balanceAfter` from their own ledger entry, and a counterparty (public name and handle) for transfers. Never the other party's wallet ID, user ID or account number |
+| Filters | Wallet (must be theirs, else 404), type, status, direction, `from` (inclusive) / `to` (exclusive) |
+
+History verified over HTTP on PostgreSQL 18.3: 21 checks (visibility for three users, a page walk with 5 items forced into the same millisecond, every filter, a forged cursor) and three deliberate code breaks, each caught: no id tie-break in the cursor, the incoming-visibility rule removed, the fee shown to the recipient.
+
 Verified on PostgreSQL 18.3 (PGlite): 32 checks (every shape refusal, each transition with the money check behind it, reversal mirroring and uniqueness, references against the database CHECK), 6 unit tests, and three deliberate code breaks, each caught: completing without a posting, ignoring an active hold, dating references in UTC.
 
 ---

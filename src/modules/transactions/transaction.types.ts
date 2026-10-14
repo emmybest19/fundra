@@ -86,3 +86,76 @@ export interface NewTransaction {
 }
 
 export type TransactionRow = Transaction;
+
+// ─── What the user sees ───────────────────────────────────────────────────────────────────
+
+/**
+ * One transaction from the caller's side. Amounts are kobo strings (D1). Nothing that belongs
+ * to the other party is shown: no wallet IDs, account numbers or user IDs, only their public
+ * name and handle.
+ */
+export interface TransactionView {
+  id: string;
+  reference: string;
+  type: TransactionType;
+  status: TransactionStatus;
+  /** Relative to the caller: IN = money arriving in their wallet, OUT = leaving it. */
+  direction: 'IN' | 'OUT';
+  amount: string;
+  /** The caller's fee: "0" on money arriving (the sender paid it). */
+  fee: string;
+  /** What left (amount + fee) or arrived (amount). */
+  total: string;
+  currency: string;
+  description: string | null;
+  /** Only on the caller's own outgoing items. */
+  failureReason: string | null;
+  counterparty: { name: string; handle: string } | null;
+  reversalOf: { id: string; reference: string } | null;
+  /** The caller's ledger balance after this posting; null until it posts. */
+  balanceAfter: string | null;
+  createdAt: Date;
+  completedAt: Date | null;
+}
+
+interface PartyWallet {
+  id: string;
+  user: { firstName: string; lastName: string; handle: string };
+}
+
+export type TransactionWithParties = Transaction & {
+  sourceWallet: PartyWallet | null;
+  destinationWallet: PartyWallet | null;
+  reversalOf: { id: string; reference: string } | null;
+};
+
+export function toTransactionView(
+  row: TransactionWithParties,
+  myWalletIds: ReadonlySet<string>,
+  balanceAfter: bigint | null,
+): TransactionView {
+  const out = row.sourceWalletId !== null && myWalletIds.has(row.sourceWalletId);
+  const other = out ? row.destinationWallet : row.sourceWallet;
+  const fee = out ? row.fee : 0n;
+  return {
+    id: row.id,
+    reference: row.reference,
+    type: row.type,
+    status: row.status,
+    direction: out ? 'OUT' : 'IN',
+    amount: row.amount.toString(),
+    fee: fee.toString(),
+    total: (row.amount + fee).toString(),
+    currency: row.currency,
+    description: row.description,
+    failureReason: out ? row.failureReason : null,
+    counterparty:
+      other === null || myWalletIds.has(other.id)
+        ? null
+        : { name: `${other.user.firstName} ${other.user.lastName}`, handle: other.user.handle },
+    reversalOf: row.reversalOf,
+    balanceAfter: balanceAfter?.toString() ?? null,
+    createdAt: row.createdAt,
+    completedAt: row.completedAt,
+  };
+}

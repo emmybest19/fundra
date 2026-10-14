@@ -82,9 +82,9 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Holds (place / settle / release): available-only reservation, exact settlement through `post()` (allowed if frozen mid-flight), release always allowed, `post()` refuses held transactions; invariant available = ledger − active holds; 22 checks on PostgreSQL 18.3
 - [ ] **Concurrency test:** parallel debits never overdraw, ledger always balances. **Deferred (2026-10-14): needs real PostgreSQL (Docker)**; PGlite serves every connection from one backend, so it can't run postings in parallel. Belongs with the Stage 6 Testcontainers suite
 
-### Stage 12 — Transactions
+### Stage 12 — Transactions ✅
 - [x] Transaction record, references, status state machine: creation with per-type shape checks and reversal mirroring, Lagos-dated references, transition table (+ instant `PENDING → COMPLETED/FAILED`) with posting/hold checks per status; 32 checks on PostgreSQL 18.3
-- [ ] History endpoints (cursor pagination, filters)
+- [x] History endpoints (cursor pagination, filters): `GET /transactions` (keyset on created_at+id, opaque cursor, wallet/type/status/direction/date filters) and `GET /transactions/:id`; caller-side view; another user's money visible only once it arrived; 21 checks over HTTP on PostgreSQL 18.3
 
 ### Stage 13 — Transfers
 - [ ] `POST /transfers`: checks, limits, idempotency, atomic posting, fees
