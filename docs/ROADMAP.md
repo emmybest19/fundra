@@ -86,9 +86,9 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Transaction record, references, status state machine: creation with per-type shape checks and reversal mirroring, Lagos-dated references, transition table (+ instant `PENDING → COMPLETED/FAILED`) with posting/hold checks per status; 32 checks on PostgreSQL 18.3
 - [x] History endpoints (cursor pagination, filters): `GET /transactions` (keyset on created_at+id, opaque cursor, wallet/type/status/direction/date filters) and `GET /transactions/:id`; caller-side view; another user's money visible only once it arrived; 21 checks over HTTP on PostgreSQL 18.3
 
-### Stage 13 — Transfers
+### Stage 13 — Transfers ✅
 - [x] `POST /transfers`: checks, limits, idempotency, atomic posting, fees. Plus `GET /transfers/recipient` (D2 lookup, check-digit typo refusal, rate-limited); limits checked under the wallet locks (daily outflow summed under the sender's lock); recipient refusals generic; deadlocks retried ×3; 26 checks over HTTP on PostgreSQL 18.3
-- [ ] Reversals
+- [x] Reversals: admin service (`transactions:reverse`; endpoint in Stage 19) for completed transfers: REVERSAL + separate fee REFUND, original → REVERSED, exempt from limits and freezes but never overdraws, no self-action; 16 checks on PostgreSQL 18.3
 
 ### Stage 14 — Payments
 - [ ] `PaymentProvider` interface + `MockPaymentProvider`

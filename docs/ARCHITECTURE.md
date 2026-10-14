@@ -518,6 +518,18 @@ Verified on PostgreSQL 18.3 (PGlite): 32 checks (every shape refusal, each trans
 
 Refusals (funds, limits, recipient) are 4xx with **nothing saved**, not `FAILED` records: no money moved and the client is told immediately; the key is freed for a retry. A refusal caused by the **recipient** (max balance, frozen or closed wallet) reaches the sender only as `RECIPIENT_CANNOT_RECEIVE`. Deadlocks and lock timeouts are retried server-side up to 3 times (the claim is released on failure, so each attempt starts clean). Verified over HTTP on PostgreSQL 18.3: 26 checks (lookups, replay and key reuse, every refusal moving nothing, the daily limit reached exactly then exceeded by a kobo, a fee split with rounding, the books balanced) and three deliberate code breaks, each caught: today's outflow not counted, a recipient's refusal not made generic, idempotency bypassed (money moved twice).
 
+**Reversals** ([transfer-reversal.service.ts](../src/modules/transfers/transfer-reversal.service.ts)): an admin action under `transactions:reverse` (FINANCE); the endpoint comes with Admin in Stage 19. One database transaction:
+
+| Concern | Design |
+|---|---|
+| What | Only a `COMPLETED` `TRANSFER` (other types get refunds and reversals with Payments, Stage 14). The original row is locked first, so two reversals can't race; a second attempt is `409 TRANSACTION_NOT_REVERSIBLE`, and the unique `reversal_of_id` backs that up |
+| Money | The sender gets everything back as **two records**: a `REVERSAL` (recipient → sender, the amount, linked to the original) and, if a fee was charged, a `REFUND` of the fee from `FEE_REVENUE`. Each party's history stays true: the recipient sees only what they returned |
+| Rules | No tier limits (reversals and refunds are exempt), and frozen wallets don't block it (the ledger exempts `REVERSAL`/`REFUND`), but **never an overdraft**: if the recipient has spent the money, `422 INSUFFICIENT_FUNDS`, nothing changes, and the admin decides what's next. A closed wallet refuses |
+| Records | Reversal and refund `COMPLETED`, original `REVERSED` (the transition table requires the completed reversal); audit `transaction.reversed` by the ADMIN actor, with the reason; outbox `transaction.reversed` (no reason) |
+| Guards | A reason of 1–500 characters; nobody reverses a transfer from or to their own wallet (`403 TRANSACTION_SELF_ACTION`); deadlocks retried ×3 |
+
+Verified on PostgreSQL 18.3: 16 checks (a plain and a fee-bearing reversal restoring the sender exactly and revenue to where it was, each party's view, double reversal, recipient already spent it, recipient frozen, self-action, the books balanced) and three deliberate code breaks, each caught: the fee not refunded, the original not marked `REVERSED`, the self-action guard removed.
+
 The diagram below is the original design; step 3 above refines its "check limits" step.
 
 

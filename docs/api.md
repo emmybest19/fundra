@@ -94,6 +94,8 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 403 | `KYC_REQUIRED` | You need a wallet (KYC Tier 1) for this |
 | 404 | `RECIPIENT_NOT_FOUND` | No one can receive at that handle or account number |
 | 422 | `SELF_TRANSFER` | A transfer to yourself |
+| 409 | `TRANSACTION_NOT_REVERSIBLE` | (Admin) Only a completed transfer can be reversed, and only once |
+| 403 | `TRANSACTION_SELF_ACTION` | (Admin) You can't reverse a transaction involving your own wallet |
 | 409 | `KYC_TIER_ORDER` | Tiers are taken in order; complete the previous tier first |
 | 409 | `KYC_TIER_ALREADY_APPROVED` | You're already verified at this tier or higher |
 | 409 | `KYC_UNDER_REVIEW` | A Tier 3 submission is being reviewed; documents and address can't change until it's decided |

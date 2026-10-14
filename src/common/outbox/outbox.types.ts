@@ -66,6 +66,19 @@ export interface OutboxEventPayloads {
     userId: string;
     walletsClosed: number;
   };
+  /** A completed transfer undone by an admin. The reason stays in the audit log. */
+  'transaction.reversed': {
+    originalTransactionId: string;
+    reversalTransactionId: string;
+    /** The fee given back to the sender, if there was one. */
+    feeRefundTransactionId: string | null;
+    reference: string;
+    senderUserId: string;
+    recipientUserId: string;
+    amount: AmountString;
+    fee: AmountString;
+    currency: Currency;
+  };
   /** Never the reason: a freeze reason stays in the audit log (no tipping off). */
   'wallet.status_changed': {
     userId: string;
