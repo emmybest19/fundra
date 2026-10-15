@@ -708,7 +708,7 @@ Three deliberate code breaks were each caught: refunds misrouted, the "already p
 
 ---
 
-## 9. Asynchronous processing — *Partly built (queues, worker)*
+## 9. Asynchronous processing — *Built (queues, worker, outbox relay; Redis run pending)*
 
 ### 9.1 Transactional outbox
 
@@ -760,7 +760,8 @@ Jobs retry a bounded number of times with exponential backoff. Jobs that keep fa
 | Queues | `createQueues(connection)` makes the three queues above. Job options: 5 attempts, exponential backoff from 1 s; completed jobs kept 24 h (so a repeated job ID is still deduplicated), failed ones 7 days |
 | Connection | `createQueueConnection()`: its own ioredis client, tuned the opposite way to the request-path client. `maxRetriesPerRequest: null` (BullMQ's blocking reads need it), and the protocol **pinned to RESP2**: ioredis 6 defaults to RESP3, and pinning removes the compatibility question rather than relying on ioredis's RESP2-shaped "legacy" replies |
 | Worker process | `src/jobs/workers.ts` (`npm run start:worker`): one BullMQ `Worker` per queue (concurrency: notifications 10, webhooks 5, maintenance 1), dispatching by job name. A job with no handler throws `UnrecoverableError`: it fails at once instead of retrying something that can never work |
-| Recurring jobs | Upserted at every worker start (`upsertJobScheduler`), so a restart never duplicates them: the webhook sweep every 30 s, the outbox relay every second |
+| Recurring jobs | Upserted at every worker start (`upsertJobScheduler`), so a restart never duplicates them: the webhook sweep every 30 s, the outbox relay every second, `expire-otp` hourly |
+| `expire-otp` | One-time codes need no sweep: they are Redis hashes whose 10-minute `PEXPIRE` is set in the same `MULTI` as the code, so Redis expires them itself. What does accumulate is **expired idempotency keys** in PostgreSQL (24 h TTL; the `expires_at` index exists for this). The job deletes them in bounded batches (1,000 per statement, at most 50 per run). An expired key was already reusable, so this only reclaims space. The 24 h expiry is far past the 60 s claim lease, so no request still owns a key being deleted. Verified on PostgreSQL 18.3 in 6 checks, with three code breaks caught (expiry ignored, one batch only, handler missing) |
 | Shutdown | API: queues close **first** (they use the queue connection), then that connection, then Redis, then the database. Worker: workers first (`close()` waits for running jobs to finish), then queues, Redis, the database |
 
 Verified with **real BullMQ** (queues, workers, the scheduler) on BullMQ 6's PostgreSQL backend over PGlite, because Redis isn't installed yet. 12 checks covering:
@@ -783,7 +784,7 @@ Three deliberate code breaks were each caught: the webhook never queued, a proce
 | Data | Store | Reason |
 |---|---|---|
 | Users, wallets, ledger, transactions, **idempotency records**, webhook events, audit, outbox | PostgreSQL | Must be durable and transactional together |
-| Rate-limit counters, hashed OTPs, caches, in-progress locks, queues | Redis | Short-lived; safe to lose |
+| Rate-limit counters, hashed OTPs, caches, in-progress locks, queues | Redis | Short-lived; safe to lose. OTPs expire by Redis TTL, set atomically with the code |
 
 The brief lists idempotency keys under Redis. They are deliberately kept in **PostgreSQL**, in the same transaction as the money movement. A Redis-only key can disagree with the database after a crash, causing either a double charge or a stuck request. Redis is used only as an optional "request in progress" lock.
 

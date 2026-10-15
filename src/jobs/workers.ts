@@ -2,6 +2,7 @@
 // API hands off (process-webhook) and the recurring maintenance (docs/ARCHITECTURE.md §9.2).
 import { UnrecoverableError, Worker, type ConnectionOptions, type Job } from 'bullmq';
 import type { Logger } from 'pino';
+import { IdempotencyService } from '../common/idempotency/idempotency.service.ts';
 import { OutboxRelay, type OutboxJobData } from '../common/outbox/outbox.relay.ts';
 import { registerShutdown } from '../common/utils/shutdown.ts';
 import { disconnectDatabase, prisma } from '../config/database.ts';
@@ -27,6 +28,9 @@ export type JobHandlers = Partial<Record<JobName, JobHandler>>;
 /** How often the webhook sweep picks up events that weren't (or couldn't be) processed. */
 export const WEBHOOK_SWEEP_EVERY_MS = 30_000;
 
+/** How often expired short-lived records are cleared. */
+export const EXPIRE_EVERY_MS = 60 * 60 * 1_000;
+
 /** How often committed outbox events are published: the lag before a notification starts. */
 export const OUTBOX_RELAY_EVERY_MS = 1_000;
 
@@ -45,6 +49,7 @@ export function createJobHandlers(deps: {
 }): JobHandlers {
   const webhooks = createWebhookProcessor(deps.db, deps.provider);
   const outbox = new OutboxRelay(deps.db, deps.queues.notifications);
+  const idempotency = new IdempotencyService(deps.db);
   return {
     'process-webhook': async (job) => {
       const { webhookEventId } = job.data as ProcessWebhookData;
@@ -57,6 +62,9 @@ export function createJobHandlers(deps: {
       return result;
     },
     'outbox-relay': () => outbox.relay(),
+    // One-time codes need nothing here: they live in Redis and expire by TTL (set atomically
+    // with the code). What does pile up is expired idempotency keys in PostgreSQL.
+    'expire-otp': async () => ({ idempotencyKeysDeleted: await idempotency.purgeExpired() }),
     // Stage 17 replaces this with real notifications. Until then the published events are
     // acknowledged here, so they don't pile up as failed jobs.
     'send-notification': (job) => {
@@ -123,6 +131,11 @@ export async function scheduleRecurringJobs(queues: JobQueues): Promise<void> {
     'outbox-relay',
     { every: OUTBOX_RELAY_EVERY_MS },
     { name: 'outbox-relay', data: {} },
+  );
+  await queues.maintenance.upsertJobScheduler(
+    'expire-otp',
+    { every: EXPIRE_EVERY_MS },
+    { name: 'expire-otp', data: {} },
   );
 }
 

@@ -121,7 +121,8 @@ docs/              project definition, architecture, case study, API, security
 | Transfers (Stage 13): `POST /transfers` (idempotent, limits, fees), recipient lookup, reversals | Done. The reversal endpoint arrives with Admin (Stage 19) |
 | Payments (Stage 14): `PaymentProvider` contract + mock, deposits, withdrawals with bank name enquiry, bill payments and refunds (`/payments/…`) | Done. Outcomes are applied from provider events |
 | Webhooks (Stage 15): `POST /webhooks/payments` (signature, dedupe, persistence, processing into payments) | Done |
-| Background jobs (Stage 16): queues + worker process (`npm run start:worker`) | In progress (items 1–2 of 3 done: queues, worker, outbox relay; `expire-otp` next). Not yet run against a real Redis |
+| Background jobs (Stage 16): queues + worker process (`npm run start:worker`) | Done (queues, worker, outbox relay, `expire-otp`). Not yet run against a real Redis, which needs Redis installed |
+| Notifications (Stage 17) | Next |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).

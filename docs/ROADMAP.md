@@ -100,10 +100,10 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Raw-body route, HMAC verification, event-ID dedupe, persistence: `POST /webhooks/payments` before JSON parsing; 401 and nothing stored on a bad signature; unique (provider, event ID) makes replays `200 DUPLICATE`; unknown types stored `IGNORED`; 12 checks on PostgreSQL 18.3
 - [x] `process-webhook` dispatch to payments: stored payload → deposits / payouts / bills / refunds; outcome recorded on the event (PROCESSED, review noted, FAILED + attempts for retry); inline until Stage 16, `processPending()` ready for the job; 15 end-to-end checks on PostgreSQL 18.3
 
-### Stage 16 — Background jobs
+### Stage 16 — Background jobs ✅ (real-Redis run deferred)
 - [x] Queues + worker process (`jobs/workers.ts`); close queues first in shutdown cleanup; webhooks handed to the worker (job ID = event ID, inline fallback, 30 s sweep); queue connection pinned to RESP2; 12 checks with real BullMQ on its PostgreSQL backend (PGlite). **Deferred:** confirming BullMQ on a real Redis 8 server (needs Redis installed)
 - [x] Outbox relay (`SELECT … FOR UPDATE SKIP LOCKED` batches, job ID = event ID, increment `attempts`, mark `published_at`): every second; failures wait for the next run without holding back the batch; a lost COMMIT re-queues as the same job; 11 checks with real BullMQ
-- [ ] `expire-otp`
+- [x] `expire-otp`: OTPs already expire by Redis TTL (set atomically with the code); the hourly job purges expired idempotency keys in bounded batches; 6 checks on PostgreSQL 18.3
 
 ### Stage 17 — Notifications
 - [ ] Notification records + email/SMS/push jobs (mock senders)

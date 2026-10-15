@@ -172,6 +172,27 @@ export class IdempotencyService {
   }
 
   /**
+   * Deletes keys past their expiry, in batches, so the table holds about a day of keys. An
+   * expired key is already reusable (#claim deletes it on sight); this only reclaims space.
+   * The expiry (24 h) is far past the claim lease (60 s), so no request still owns one.
+   * Returns how many were deleted.
+   */
+  async purgeExpired(batchSize = 1_000, maxBatches = 50): Promise<number> {
+    const now = new Date(this.#now());
+    let deleted = 0;
+    for (let batch = 0; batch < maxBatches; batch++) {
+      const count = await this.#db.$executeRaw`
+        DELETE FROM idempotency_keys
+        WHERE id IN (
+          SELECT id FROM idempotency_keys WHERE expires_at <= ${now} LIMIT ${batchSize}
+        )`;
+      deleted += count;
+      if (count < batchSize) break;
+    }
+    return deleted;
+  }
+
+  /**
    * Fencing: lock our idempotency row as the first statement of the money transaction and
    * verify we still own it. A takeover then has to wait for our COMMIT (and will see
    * COMPLETED), or, if it happened first, we abort here before touching any money.
