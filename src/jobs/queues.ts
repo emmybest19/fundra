@@ -11,9 +11,15 @@ export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
 /** Every job, by the queue that runs it. A job's name is how the worker picks its handler. */
 export const JOB_NAMES = {
-  notifications: ['send-email', 'send-sms', 'send-notification'],
+  notifications: ['send-email', 'send-sms', 'send-push', 'send-notification'],
   webhooks: ['process-webhook'],
-  maintenance: ['outbox-relay', 'expire-otp', 'reconcile-transactions', 'generate-statement'],
+  maintenance: [
+    'outbox-relay',
+    'expire-otp',
+    'requeue-notifications',
+    'reconcile-transactions',
+    'generate-statement',
+  ],
 } as const satisfies Record<QueueName, readonly string[]>;
 
 export type JobName = (typeof JOB_NAMES)[QueueName][number];

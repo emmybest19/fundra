@@ -106,7 +106,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] `expire-otp`: OTPs already expire by Redis TTL (set atomically with the code); the hourly job purges expired idempotency keys in bounded batches; 6 checks on PostgreSQL 18.3
 
 ### Stage 17 — Notifications
-- [ ] Notification records + email/SMS/push jobs (mock senders)
+- [x] Notification records + email/SMS/push jobs (mock senders): one set per event (advisory lock), channels by preference, `send-email/sms/push` (job ID = notification ID, FAILED after the last retry), `requeue-notifications` sweep, in-app feed API; 18 checks with real BullMQ
 - [ ] Wire up events: transfers, deposits, withdrawals, logins, KYC, security
 
 ### Stage 18 — Beneficiaries

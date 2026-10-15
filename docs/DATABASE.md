@@ -23,7 +23,7 @@
 | Deletes | Users and financial rows are **never** hard-deleted; foreign keys default to `ON DELETE RESTRICT` | Financial records must stay explainable. Deactivation is a status |
 | Secrets | Hashes for passwords and tokens; application-level AES-256-GCM for BVN/NIN | A database leak doesn't expose credentials or identity numbers |
 
-**Kept in Redis, not here** (short-lived; safe to lose): email/phone OTPs, password-reset tokens, rate-limit counters, caches. See [ARCHITECTURE.md §9.3](ARCHITECTURE.md#93-postgresql-vs-redis).
+**Kept in Redis, not here** (short-lived; safe to lose): email/phone OTPs, password-reset tokens, rate-limit counters, caches. See [ARCHITECTURE.md §9.4](ARCHITECTURE.md#94-postgresql-vs-redis).
 
 ---
 
@@ -416,7 +416,7 @@ Unique `(provider_id, event_id)`: **the** deduplication guarantee. A replayed we
 | `created_at` | timestamptz | |
 | `expires_at` | timestamptz | 24 h; expired keys are purged |
 
-Unique `(user_id, key)` is the claim lock. The row is marked `COMPLETED` **in the same DB transaction** as the money movement ([ARCHITECTURE.md §9.3](ARCHITECTURE.md#93-postgresql-vs-redis)); the full algorithm is in [ARCHITECTURE.md, Idempotency](ARCHITECTURE.md#idempotency-built).
+Unique `(user_id, key)` is the claim lock. The row is marked `COMPLETED` **in the same DB transaction** as the money movement ([ARCHITECTURE.md §9.4](ARCHITECTURE.md#94-postgresql-vs-redis)); the full algorithm is in [ARCHITECTURE.md, Idempotency](ARCHITECTURE.md#idempotency-built).
 
 ### `outbox_events`
 

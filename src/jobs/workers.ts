@@ -12,6 +12,13 @@ import { createQueueConnection, disconnectRedis } from '../config/redis.ts';
 import type { PrismaClient } from '../generated/prisma/client.ts';
 import type { PaymentProvider } from '../modules/payments/providers/payment-provider.ts';
 import { MockPaymentProvider } from '../modules/payments/providers/mock-payment-provider.ts';
+import { MemoryChannelSenders } from '../modules/notifications/channel-senders.ts';
+import {
+  NotificationService,
+  type DeliverNotificationData,
+} from '../modules/notifications/notification.service.ts';
+import type { ChannelSenders } from '../modules/notifications/notification.types.ts';
+import { NotificationDelivery } from '../modules/notifications/notification.worker.ts';
 import { createWebhookProcessor } from '../modules/webhooks/webhook.processor.ts';
 import {
   createQueues,
@@ -27,6 +34,9 @@ export type JobHandlers = Partial<Record<JobName, JobHandler>>;
 
 /** How often the webhook sweep picks up events that weren't (or couldn't be) processed. */
 export const WEBHOOK_SWEEP_EVERY_MS = 30_000;
+
+/** How often notifications stuck in PENDING are queued again. */
+export const REQUEUE_NOTIFICATIONS_EVERY_MS = 60_000;
 
 /** How often expired short-lived records are cleared. */
 export const EXPIRE_EVERY_MS = 60 * 60 * 1_000;
@@ -45,11 +55,19 @@ export function createJobHandlers(deps: {
   db: PrismaClient;
   provider: PaymentProvider;
   queues: Pick<JobQueues, 'notifications'>;
+  senders: ChannelSenders;
   logger: Logger;
 }): JobHandlers {
   const webhooks = createWebhookProcessor(deps.db, deps.provider);
   const outbox = new OutboxRelay(deps.db, deps.queues.notifications);
   const idempotency = new IdempotencyService(deps.db);
+  const notifications = new NotificationService(deps.db, deps.queues.notifications);
+  const delivery = new NotificationDelivery(deps.db, deps.senders);
+  // The last attempt marks the notification FAILED before the error is rethrown.
+  const deliver = (job: Job) =>
+    delivery.deliver((job.data as DeliverNotificationData).notificationId, {
+      final: job.attemptsMade + 1 >= (job.opts.attempts ?? 1),
+    });
   return {
     'process-webhook': async (job) => {
       const { webhookEventId } = job.data as ProcessWebhookData;
@@ -65,6 +83,10 @@ export function createJobHandlers(deps: {
     // One-time codes need nothing here: they live in Redis and expire by TTL (set atomically
     // with the code). What does pile up is expired idempotency keys in PostgreSQL.
     'expire-otp': async () => ({ idempotencyKeysDeleted: await idempotency.purgeExpired() }),
+    'send-email': deliver,
+    'send-sms': deliver,
+    'send-push': deliver,
+    'requeue-notifications': async () => ({ queued: await notifications.requeuePending() }),
     // Stage 17 replaces this with real notifications. Until then the published events are
     // acknowledged here, so they don't pile up as failed jobs.
     'send-notification': (job) => {
@@ -137,6 +159,11 @@ export async function scheduleRecurringJobs(queues: JobQueues): Promise<void> {
     { every: EXPIRE_EVERY_MS },
     { name: 'expire-otp', data: {} },
   );
+  await queues.maintenance.upsertJobScheduler(
+    'requeue-notifications',
+    { every: REQUEUE_NOTIFICATIONS_EVERY_MS },
+    { name: 'requeue-notifications', data: {} },
+  );
 }
 
 if (import.meta.main) {
@@ -146,11 +173,21 @@ if (import.meta.main) {
   const provider = new MockPaymentProvider({ webhookSecret: env.PAYMENT_WEBHOOK_SECRET });
   const running = startWorkers({
     connection,
-    handlers: createJobHandlers({ db: prisma, provider, queues, logger }),
+    // Email/SMS/push providers arrive with deployment (Stage 25); until then nothing leaves.
+    handlers: createJobHandlers({
+      db: prisma,
+      provider,
+      queues,
+      senders: new MemoryChannelSenders(),
+      logger,
+    }),
     logger,
   });
   await scheduleRecurringJobs(queues);
   logger.info({ queues: Object.values(QUEUE_NAMES) }, 'Fundra worker started');
+  logger.warn(
+    'Notifications use in-memory email/SMS/push senders: nothing is actually delivered yet',
+  );
 
   registerShutdown({
     logger,

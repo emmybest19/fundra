@@ -20,6 +20,8 @@ import { DepositService } from '../modules/payments/deposit.service.ts';
 import { OutboundPaymentService } from '../modules/payments/outbound-payment.service.ts';
 import { createPaymentRouter } from '../modules/payments/payment.routes.ts';
 import type { PaymentProvider } from '../modules/payments/providers/payment-provider.ts';
+import { createNotificationRouter } from '../modules/notifications/notification.routes.ts';
+import { NotificationFeed } from '../modules/notifications/notification.service.ts';
 import type { MessageSender } from '../modules/notifications/notification.types.ts';
 import { createUserRouter } from '../modules/users/user.routes.ts';
 import { createTransactionRouter } from '../modules/transactions/transaction.routes.ts';
@@ -107,6 +109,11 @@ export function createApiRouter({
       authenticate,
       rateLimitStore,
     }),
+  );
+
+  router.use(
+    '/notifications',
+    createNotificationRouter({ feed: new NotificationFeed(db), authenticate }),
   );
 
   router.use(

@@ -204,7 +204,7 @@ sequenceDiagram
 | COMMIT succeeds but the acknowledgement is lost | The row is `COMPLETED`, so the cleanup's compare-and-swap doesn't delete it; a retry replays |
 | Response body contains a `bigint` | The JSON round-trip fails before COMMIT, so no money moves without a replayable response |
 
-**Verified (2026-10-02)** through the real Prisma client on PostgreSQL 18.3 (pglite-socket), 20 of 21 scenarios: first run and replay, reused key (422), work failure releases the key, COMMIT failure (unbalanced ledger) persists nothing, stale takeover, **fencing** (a gated "slow original" was rejected and the takeover executed exactly once), expiry, and a bigint response failing before COMMIT. **Not verifiable on PGlite:** true concurrency. PGlite is single-connection; its socket multiplexer dropped 10 of 20 simultaneous connections. Even then, exactly one execution happened. Real concurrent transactions and row-lock waits are tested in the Stage 6 Testcontainers suite. The optional Redis "in-progress lock" from §9.3 isn't needed: the unique row claim is the lock.
+**Verified (2026-10-02)** through the real Prisma client on PostgreSQL 18.3 (pglite-socket), 20 of 21 scenarios: first run and replay, reused key (422), work failure releases the key, COMMIT failure (unbalanced ledger) persists nothing, stale takeover, **fencing** (a gated "slow original" was rejected and the takeover executed exactly once), expiry, and a bigint response failing before COMMIT. **Not verifiable on PGlite:** true concurrency. PGlite is single-connection; its socket multiplexer dropped 10 of 20 simultaneous connections. Even then, exactly one execution happened. Real concurrent transactions and row-lock waits are tested in the Stage 6 Testcontainers suite. The optional Redis "in-progress lock" from §9.4 isn't needed: the unique row claim is the lock.
 
 ### Validation (*Built*)
 
@@ -779,7 +779,31 @@ Three deliberate code breaks were each caught: the webhook never queued, a proce
 - BullMQ runs on its own PGlite server, with Fundra's client on one connection, because concurrent connections interleave on PGlite's single session;
 - workers find new jobs on a poll of a few seconds, because PGlite doesn't relay `LISTEN/NOTIFY`, where Redis wakes them at once.
 
-### 9.3 PostgreSQL vs Redis
+### 9.3 Notifications — *Built (records, delivery, feed; event wiring is item 2)*
+
+[notifications module](../src/modules/notifications/):
+
+| Concern | Design |
+|---|---|
+| Records | `NotificationService.notify()` takes finished text (title, body, small `data`) for one user and one category (`transactions`, `security`, `marketing`). One transaction writes an `IN_APP` row (stored = delivered, `SENT`) plus a `PENDING` row per channel the user's preferences allow. Security email can't be turned off; marketing is opt-in. A deactivated account gets nothing |
+| Exactly one set per event | Notifications from an outbox event carry its ID. Under an advisory lock on (event, user, type), a repeat finds the set already made and creates nothing, even when the same event is delivered twice at once (the relay is at-least-once) |
+| Delivery | After COMMIT, `send-email` / `send-sms` / `send-push` jobs are queued with **job ID = notification ID**. `NotificationDelivery` sends through the channel's sender (email to the account's address, SMS to its phone prefixed `Fundra:`, push to the user) and marks the row `SENT`. A provider error is thrown so BullMQ retries with backoff; the last attempt marks it `FAILED` first. Delivery is at-least-once: for an alert, twice beats never |
+| Safety net | If queueing fails, the rows stay `PENDING`; `requeue-notifications` (every minute) queues anything `PENDING` for over a minute again (the job ID makes that harmless) |
+| Senders | `EmailSender`, `SmsSender`, `PushSender` interfaces. In-memory mocks for now (the worker logs a warning at startup); real providers arrive with deployment (Stage 25). Senders never log message text |
+| Feed | `GET /notifications` (newest first, cursor, `unread=true`, unread count), `POST /notifications/:id/read`, `POST /notifications/read-all`. Only the caller's own `IN_APP` rows; someone else's is a 404 |
+| Not through here | One-time codes still go straight through `MessageSender`: a queued job keeps its data for a day, and a code must never be stored |
+
+Verified on PostgreSQL 18.3 with real BullMQ in 18 checks covering:
+- channels per category and preference, and one set per event (also twice at once);
+- marketing and deactivated accounts;
+- worker delivery of email, push and SMS;
+- a provider failure (`PENDING` until the last attempt, then `FAILED`), and `IN_APP` or already-sent rows skipped;
+- the sweep re-queueing after a queueing failure;
+- the feed's pages, unread count, read, read-all and another user's notification.
+
+Three deliberate code breaks were each caught: dedupe removed, preferences ignored, and read marks not scoped to the owner.
+
+### 9.4 PostgreSQL vs Redis
 
 | Data | Store | Reason |
 |---|---|---|
@@ -938,6 +962,7 @@ This reflects the repository as it stands, not the design.
 | Prisma 7.10's query engine sends overlapping queries on one interactive transaction's connection (e.g. loading `include`d relations); `pg` 8 logs a deprecation warning and **`pg` 9 will reject it** | Found in Stage 13 by `--trace-deprecation`: the stack is inside Prisma, not Fundra (Fundra's own in-transaction `Promise.all`s were made sequential). Don't upgrade `pg` to 9 until Prisma serialises in-transaction queries |
 | The mock payment provider keeps its state in memory per process | The worker only uses its stateless parts (webhook parsing). A real provider holds that state itself |
 | "At once" webhook checks run one after another on PGlite | PGlite's socket server mis-routes responses when concurrent statements fail (a test-server limit, probed). Simultaneous identical deliveries need real PostgreSQL (Docker): same deferral as the Stage 11 parallel-debit test. The unique index and the row locks are what make them safe |
+| Email, SMS and push are in-memory mocks | Notifications are recorded, queued and "delivered" to in-memory senders. Real providers (and push device registration) come with deployment (Stage 25) |
 | Withdrawals whose payout couldn't be sent stay held until `dispatch()` runs again | The money is safe (held, not lost), but nothing retries it automatically until the background jobs (Stage 16) |
 | Deposits held for review, and abandoned checkouts, stay `PROCESSING` | Resolving held deposits is an admin action (Stage 19). Expiring abandoned ones (ask `getPaymentStatus`, then fail them) belongs to the `reconcile-transactions` job |
 | Docker isn't installed on the development machine; PostgreSQL and Redis aren't available | Integration work is blocked until they are set up |

@@ -698,6 +698,22 @@ If the biller later gives money back (in full or in part), it arrives as a separ
 | `422 INSUFFICIENT_FUNDS` / `LIMIT_*` / `WALLET_FROZEN` / `WALLET_CLOSED` | As for withdrawals |
 | `503 SERVICE_UNAVAILABLE` | The provider can't be reached for the catalogue. Nothing was taken; retry with the same key |
 
+### Notifications (your in-app feed)
+
+What Fundra has told you, newest first. Email, SMS and push copies follow your [preferences](#get-apiv1usersmepreferences--patch-apiv1usersmepreferences). All three routes need authentication and are never cached.
+
+#### `GET /api/v1/notifications?limit=20&unread=true&cursor=…`
+
+```json
+{ "data": { "notifications": [{ "id": "…", "type": "transfer.received", "title": "Money in", "body": "You received ₦10,000.00 from Bola Test.", "data": { "amount": "1000000" }, "read": false, "createdAt": "…" }] }, "meta": { "limit": 20, "nextCursor": null, "unread": 3 } }
+```
+
+`unread=true` lists unread ones only; `meta.unread` is always the total unread count (for a badge). Page with `meta.nextCursor`.
+
+#### `POST /api/v1/notifications/:id/read` · `POST /api/v1/notifications/read-all`
+
+`204` for one (a notification that isn't yours is `404`); `{ "data": { "marked": 3 } }` for all.
+
 ### Webhooks (from the payment provider)
 
 #### `POST /api/v1/webhooks/payments`
