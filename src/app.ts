@@ -18,6 +18,8 @@ import type { PaymentProvider } from './modules/payments/providers/payment-provi
 import { createHealthRouter } from './modules/health/health.routes.ts';
 import type { HealthService } from './modules/health/health.service.ts';
 import type { MessageSender } from './modules/notifications/notification.types.ts';
+import { createWebhookRouter } from './modules/webhooks/webhook.routes.ts';
+import { WebhookService } from './modules/webhooks/webhook.service.ts';
 import { createApiRouter } from './routes/index.ts';
 
 export interface AppDependencies {
@@ -62,7 +64,11 @@ export function createApp({
 
   // Before body parsing, so rejected requests cost nothing to parse.
   app.use(rateLimit(rateLimitStore, API_RATE_LIMIT));
-  // Stage 15: the webhooks router mounts here, before JSON parsing (signatures need the raw body).
+  // Before JSON parsing: webhook signatures cover the raw bytes (docs/ARCHITECTURE.md §8.6).
+  app.use(
+    '/api/v1/webhooks',
+    createWebhookRouter({ webhooks: new WebhookService(db, paymentProvider) }),
+  );
 
   app.use(jsonBody);
   app.use(

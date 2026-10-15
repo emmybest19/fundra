@@ -643,7 +643,7 @@ Verified on PostgreSQL 18.3: 32 checks covering:
 
 Three deliberate code breaks were each caught: dispatch re-sending an already-sent payout, the amount check removed, and matching by our own reference removed.
 
-### 8.5 Bill payments and refunds — *Built (the webhook endpoint is Stage 15)*
+### 8.5 Bill payments and refunds — *Built*
 
 The spec's "payments" are **bill payments**: airtime, TV, electricity, paid through the provider (the `payments` table already described them as outbound provider payments). They run through exactly the same steps as withdrawals in `OutboundPaymentService`. Only the destination and the provider call differ, so there is one implementation, not two copies.
 
@@ -664,6 +664,26 @@ Verified on PostgreSQL 18.3: 26 checks covering:
 - shared limits and the books balanced.
 
 Three deliberate code breaks were each caught: refund dedupe removed, the refund total cap removed, and the event-kind check removed.
+
+### 8.6 Webhooks — *Built (receive and persist; processing is item 2)*
+
+`POST /api/v1/webhooks/payments` ([webhooks module](../src/modules/webhooks/)):
+
+| Step | Design |
+|---|---|
+| Raw body | Mounted in `app.ts` **before** `express.json()`, with `express.raw()` (64 KB, any content type). The signature covers the exact bytes; a parsed-and-reserialised body would not match. After the global rate limiter, like every API route |
+| Verify | `provider.verifyWebhook()`: HMAC over the raw bytes, constant-time compare. Fails → `401 INVALID_WEBHOOK_SIGNATURE`, and **nothing is stored**: an unsigned body is never trusted enough to keep |
+| Parse | `provider.parseWebhook()`. A signed but malformed body → `400`, not stored (there's no event ID to dedupe on) |
+| Dedupe and persist | Insert `webhook_events` (provider, event ID, type, payload as sent). The unique `(provider_id, event_id)` index **is** the dedupe: a second delivery fails the insert and gets `200 DUPLICATE`, even when several arrive at once. Events Fundra doesn't act on are stored `IGNORED` (with `processed_at`) |
+| Answer | `200` for accepted, duplicate and ignored alike, so the provider stops retrying. No user authentication: the signature is the credential |
+
+Verified on PostgreSQL 18.3 through the real app: 12 checks covering:
+- acceptance and storage;
+- a duplicate, and five identical deliveries at once (one row);
+- one changed byte, no signature, re-formatted JSON, another secret's signature;
+- signed-but-malformed, an ignored type, a text/plain content type, and a body over 64 KB.
+
+Three deliberate code breaks were each caught: the signature check skipped, a duplicate insert treated as an error, and the body re-serialised before verification (what a global JSON parser would do).
 
 ---
 

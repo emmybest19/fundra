@@ -97,7 +97,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Payments + refunds: bill payments (`GET /payments/billers`, `POST /payments/bills`) through the same hold → dispatch → settle/release service as withdrawals; biller refunds as separate REFUND transactions (partial, deduplicated by refund reference, capped at what was paid); 26 checks on PostgreSQL 18.3
 
 ### Stage 15 — Webhooks
-- [ ] Raw-body route, HMAC verification, event-ID dedupe, persistence
+- [x] Raw-body route, HMAC verification, event-ID dedupe, persistence: `POST /webhooks/payments` before JSON parsing; 401 and nothing stored on a bad signature; unique (provider, event ID) makes replays `200 DUPLICATE`; unknown types stored `IGNORED`; 12 checks on PostgreSQL 18.3
 - [ ] `process-webhook` dispatch to payments
 
 ### Stage 16 — Background jobs

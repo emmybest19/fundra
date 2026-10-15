@@ -98,6 +98,7 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 403 | `TRANSACTION_SELF_ACTION` | (Admin) You can't reverse a transaction involving your own wallet |
 | 404 | `BANK_ACCOUNT_NOT_FOUND` | The bank has no account with that bank code and number (withdrawals) |
 | 404 | `BILLER_NOT_FOUND` | No biller has that code (bill payments) |
+| 401 | `INVALID_WEBHOOK_SIGNATURE` | (Payment provider) The webhook's signature is missing or doesn't match its body |
 | 409 | `KYC_TIER_ORDER` | Tiers are taken in order; complete the previous tier first |
 | 409 | `KYC_TIER_ALREADY_APPROVED` | You're already verified at this tier or higher |
 | 409 | `KYC_UNDER_REVIEW` | A Tier 3 submission is being reviewed; documents and address can't change until it's decided |
@@ -696,6 +697,20 @@ If the biller later gives money back (in full or in part), it arrives as a separ
 | `422 VALIDATION_ERROR` | The customer reference doesn't fit the biller (the message names what's expected) |
 | `422 INSUFFICIENT_FUNDS` / `LIMIT_*` / `WALLET_FROZEN` / `WALLET_CLOSED` | As for withdrawals |
 | `503 SERVICE_UNAVAILABLE` | The provider can't be reached for the catalogue. Nothing was taken; retry with the same key |
+
+### Webhooks (from the payment provider)
+
+#### `POST /api/v1/webhooks/payments`
+
+Called by the payment provider, not by apps. No user authentication: the request must carry the provider's signature (for the mock, `X-Mock-Signature`: hex HMAC-SHA512 of the exact body with `PAYMENT_WEBHOOK_SECRET`). The body is read raw, up to 64 KB.
+
+**200** `{ "data": { "received": true, "status": "ACCEPTED" } }`. `status` is `ACCEPTED` (stored for processing), `DUPLICATE` (this event ID was already received; nothing new happened) or `IGNORED` (stored, but not an event Fundra acts on). All three are 200 so the provider stops retrying.
+
+| Error | When |
+|---|---|
+| `401 INVALID_WEBHOOK_SIGNATURE` | Missing or wrong signature, or the body was changed in transit. Nothing is stored |
+| `400 BAD_REQUEST` | Signed, but not a payload Fundra can read (e.g. no event ID). Nothing is stored |
+| `413 PAYLOAD_TOO_LARGE` | Over 64 KB |
 
 ### Transactions (your history)
 
