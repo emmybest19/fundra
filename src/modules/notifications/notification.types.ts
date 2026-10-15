@@ -57,6 +57,8 @@ export interface NotificationInput {
    * notifications already made and creates nothing new.
    */
   sourceEventId?: string;
+  /** Channels already covered another way (e.g. a security email sent directly). */
+  excludeChannels?: readonly ('EMAIL' | 'SMS' | 'PUSH')[];
 }
 
 /** A delivery channel's provider. Implementations must never log the message text. */

@@ -105,9 +105,9 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Outbox relay (`SELECT … FOR UPDATE SKIP LOCKED` batches, job ID = event ID, increment `attempts`, mark `published_at`): every second; failures wait for the next run without holding back the batch; a lost COMMIT re-queues as the same job; 11 checks with real BullMQ
 - [x] `expire-otp`: OTPs already expire by Redis TTL (set atomically with the code); the hourly job purges expired idempotency keys in bounded batches; 6 checks on PostgreSQL 18.3
 
-### Stage 17 — Notifications
+### Stage 17 — Notifications ✅
 - [x] Notification records + email/SMS/push jobs (mock senders): one set per event (advisory lock), channels by preference, `send-email/sms/push` (job ID = notification ID, FAILED after the last retry), `requeue-notifications` sweep, in-app feed API; 18 checks with real BullMQ
-- [ ] Wire up events: transfers, deposits, withdrawals, logins, KYC, security
+- [x] Wire up events: transfers, deposits, withdrawals, logins, KYC, security: every outbox event mapped to finished text per user (transfers and reversals tell both sides; new-device sign-ins only; no second password email; freeze reasons never shown); 10 end-to-end checks + 19 unit tests
 
 ### Stage 18 — Beneficiaries
 - [ ] CRUD with ownership checks + audit

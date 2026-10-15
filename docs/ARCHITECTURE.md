@@ -779,7 +779,7 @@ Three deliberate code breaks were each caught: the webhook never queued, a proce
 - BullMQ runs on its own PGlite server, with Fundra's client on one connection, because concurrent connections interleave on PGlite's single session;
 - workers find new jobs on a poll of a few seconds, because PGlite doesn't relay `LISTEN/NOTIFY`, where Redis wakes them at once.
 
-### 9.3 Notifications — *Built (records, delivery, feed; event wiring is item 2)*
+### 9.3 Notifications — *Built*
 
 [notifications module](../src/modules/notifications/):
 
@@ -802,6 +802,26 @@ Verified on PostgreSQL 18.3 with real BullMQ in 18 checks covering:
 - the feed's pages, unread count, read, read-all and another user's notification.
 
 Three deliberate code breaks were each caught: dedupe removed, preferences ignored, and read marks not scoped to the owner.
+
+**Events → notifications** ([notification.events.ts](../src/modules/notifications/notification.events.ts)): the `send-notification` job (one per outbox event, from the relay) maps the event to finished text for each user involved, loading names, amounts and billers at that moment (payloads carry IDs only):
+
+| Event | Who | Category |
+|---|---|---|
+| `transfer.completed` | Sender ("Money sent … to Bola Adeyemi (@bola)", fee if any) and recipient ("Money in … from …") | transactions |
+| `transaction.reversed` | Sender (money back, fee included) and recipient (money taken back) | transactions |
+| `deposit.completed` / `deposit.failed` | The owner, with the amount, or the reason and "nothing was added" | transactions |
+| `withdrawal.completed` / `withdrawal.failed` | The owner, with amount and fee, or the reason and "the money is back" | transactions |
+| `payment.completed` / `payment.failed` / `payment.refunded` | The owner, naming the biller and customer reference | transactions |
+| `kyc.status_changed` | The owner, naming the tier | security |
+| `auth.login_succeeded` | The owner, **only for a new device** | security |
+| `auth.password_changed` | The owner, every channel except email (the email went out directly when it happened) | security |
+| `user.contact_changed` | The account as it is now (the old address or number was alerted directly) | security |
+| `wallet.status_changed` | The owner. A freeze never says why: the reason stays in the audit log | security |
+| `user.deactivated` | Nobody: the owner was emailed directly, and the account receives nothing more | none |
+
+Text never includes a full account number, a freeze reason or a secret. Each notification carries the event's ID, so the same event consumed twice creates nothing new.
+
+Verified end to end on PostgreSQL 18.3 with real BullMQ, from real actions (KYC, sign-in, deposit, transfer, withdrawal, password change) through the outbox, the scheduled relay and the channel jobs to the mock senders. 10 checks, plus 19 unit tests of the mapping. Three deliberate code breaks were each caught: the event ID dropped (duplicates on redelivery), the channel exclusion ignored (a second password email), and the transfer recipient left uninformed.
 
 ### 9.4 PostgreSQL vs Redis
 

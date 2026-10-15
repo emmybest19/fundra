@@ -106,9 +106,10 @@ export class NotificationService {
       if (user === null || user.status === 'DEACTIVATED') return [];
       const wanted = readPreferences(user.preferences).notifications[input.category];
       const channels: NotificationChannel[] = ['IN_APP'];
-      if (wanted.email) channels.push('EMAIL');
-      if (wanted.sms) channels.push('SMS');
-      if (wanted.push) channels.push('PUSH');
+      const excluded = new Set(input.excludeChannels ?? []);
+      if (wanted.email && !excluded.has('EMAIL')) channels.push('EMAIL');
+      if (wanted.sms && !excluded.has('SMS')) channels.push('SMS');
+      if (wanted.push && !excluded.has('PUSH')) channels.push('PUSH');
 
       const data: Prisma.InputJsonObject = {
         ...input.data,

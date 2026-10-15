@@ -18,6 +18,7 @@ import {
   type DeliverNotificationData,
 } from '../modules/notifications/notification.service.ts';
 import type { ChannelSenders } from '../modules/notifications/notification.types.ts';
+import { notificationsForEvent } from '../modules/notifications/notification.events.ts';
 import { NotificationDelivery } from '../modules/notifications/notification.worker.ts';
 import { createWebhookProcessor } from '../modules/webhooks/webhook.processor.ts';
 import {
@@ -87,15 +88,13 @@ export function createJobHandlers(deps: {
     'send-sms': deliver,
     'send-push': deliver,
     'requeue-notifications': async () => ({ queued: await notifications.requeuePending() }),
-    // Stage 17 replaces this with real notifications. Until then the published events are
-    // acknowledged here, so they don't pile up as failed jobs.
-    'send-notification': (job) => {
-      const { outboxEventId, eventType } = job.data as OutboxJobData;
-      deps.logger.debug(
-        { outboxEventId, eventType },
-        'notification not sent: notifications arrive in Stage 17',
-      );
-      return Promise.resolve({ sent: false });
+    // An outbox event → the notifications it means (none for most internal events). Each
+    // notify() is idempotent per event, so a redelivered event creates nothing new.
+    'send-notification': async (job) => {
+      const inputs = await notificationsForEvent(deps.db, job.data as OutboxJobData);
+      let created = 0;
+      for (const input of inputs) created += (await notifications.notify(input)).length;
+      return { notifications: created };
     },
   };
 }

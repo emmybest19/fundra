@@ -122,7 +122,8 @@ docs/              project definition, architecture, case study, API, security
 | Payments (Stage 14): `PaymentProvider` contract + mock, deposits, withdrawals with bank name enquiry, bill payments and refunds (`/payments/…`) | Done. Outcomes are applied from provider events |
 | Webhooks (Stage 15): `POST /webhooks/payments` (signature, dedupe, persistence, processing into payments) | Done |
 | Background jobs (Stage 16): queues + worker process (`npm run start:worker`) | Done (queues, worker, outbox relay, `expire-otp`). Not yet run against a real Redis, which needs Redis installed |
-| Notifications (Stage 17): records, email/SMS/push delivery jobs (mock senders), in-app feed (`/notifications`) | In progress (item 1 of 2 done; wiring the events next) |
+| Notifications (Stage 17): records, email/SMS/push delivery jobs (mock senders), in-app feed (`/notifications`), every business event wired | Done. Email/SMS/push providers are mocks until deployment |
+| Beneficiaries (Stage 18) | Next |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).
