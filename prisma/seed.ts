@@ -44,13 +44,16 @@ export const TIER_LIMITS = CURRENCIES.flatMap((currency: Currency) => [
   },
 ]);
 
-/** D6: initial fee schedule. P2P transfers are free. */
-export const FEE_RULES = CURRENCIES.map((currency) => ({
-  transactionType: 'TRANSFER' as const,
-  currency,
-  flatFee: 0n,
-  percentageBps: 0,
-}));
+/** D6: initial fee schedule. P2P transfers are free; a bank withdrawal costs a flat ₦10. */
+export const FEE_RULES = CURRENCIES.flatMap((currency) => [
+  { transactionType: 'TRANSFER' as const, currency, flatFee: 0n, percentageBps: 0 },
+  {
+    transactionType: 'WITHDRAWAL' as const,
+    currency,
+    flatFee: toMinor(10, currency),
+    percentageBps: 0,
+  },
+]);
 
 export const PAYMENT_PROVIDERS = [{ code: 'MOCK', name: 'Mock payment provider' }] as const;
 

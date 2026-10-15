@@ -47,9 +47,10 @@ export const AUDIT_ACTIONS = [
   'deposit.initiated',
   'deposit.completed',
   'deposit.failed',
-  'deposit.review_required',
   'withdrawal.requested',
   'withdrawal.completed',
+  'withdrawal.failed',
+  'payment.review_required',
   'payment.completed',
   'transaction.reversed',
   // Beneficiaries (Stage 18)

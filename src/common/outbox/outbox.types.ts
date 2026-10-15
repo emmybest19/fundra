@@ -42,7 +42,9 @@ export interface OutboxEventPayloads {
     transactionId: string;
     reference: string;
     userId: string;
+    /** What reached the bank account; the fee was charged on top. */
     amount: AmountString;
+    fee: AmountString;
     currency: Currency;
   };
   'withdrawal.failed': {

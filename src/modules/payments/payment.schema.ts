@@ -6,3 +6,30 @@ import { amount, currency } from '../../common/validators/index.ts';
 export const createDepositBody = z.strictObject({ amount, currency });
 
 export type CreateDepositInput = z.output<typeof createDepositBody>;
+
+/** A Nigerian bank account: CBN bank code and 10-digit NUBAN. The bank checks the rest. */
+const bankAccount = {
+  bankCode: z
+    .string()
+    .trim()
+    .regex(/^\d{3,6}$/, 'Must be a 3–6 digit bank code'),
+  accountNumber: z
+    .string()
+    .trim()
+    .regex(/^\d{10}$/, 'Must be a 10-digit account number'),
+};
+
+/** GET /payments/bank-accounts/resolve?bankCode=058&accountNumber=0123456789 */
+export const bankAccountQuery = z.strictObject(bankAccount);
+
+export type BankAccountQuery = z.output<typeof bankAccountQuery>;
+
+/** The amount reaches the bank account; the withdrawal fee is charged on top. */
+export const createWithdrawalBody = z.strictObject({
+  ...bankAccount,
+  amount,
+  currency,
+  description: z.string().trim().max(100, 'Must be at most 100 characters').optional(),
+});
+
+export type CreateWithdrawalInput = z.output<typeof createWithdrawalBody>;

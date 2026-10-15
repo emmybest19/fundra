@@ -19,6 +19,7 @@ import type { KycProvider } from '../modules/kyc/providers/kyc-provider.ts';
 import { DepositService } from '../modules/payments/deposit.service.ts';
 import { createPaymentRouter } from '../modules/payments/payment.routes.ts';
 import type { PaymentProvider } from '../modules/payments/providers/payment-provider.ts';
+import { WithdrawalService } from '../modules/payments/withdrawal.service.ts';
 import type { MessageSender } from '../modules/notifications/notification.types.ts';
 import { createUserRouter } from '../modules/users/user.routes.ts';
 import { createTransactionRouter } from '../modules/transactions/transaction.routes.ts';
@@ -112,6 +113,7 @@ export function createApiRouter({
     '/payments',
     createPaymentRouter({
       deposits: new DepositService(db, paymentProvider, idempotency),
+      withdrawals: new WithdrawalService(db, paymentProvider, idempotency),
       authenticate,
       rateLimitStore,
     }),

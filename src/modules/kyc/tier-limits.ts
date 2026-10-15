@@ -2,6 +2,7 @@
 // its own transaction, under the wallet lock, with figures it read there (Stages 13–14).
 import { CURRENCIES, formatMinor, type Currency } from '../../common/constants/currency.ts';
 import { ErrorCode, UnprocessableError } from '../../common/errors/index.ts';
+import { lagosDayBounds } from '../../common/utils/business-day.ts';
 import type {
   PrismaClient,
   TransactionStatus,
@@ -50,6 +51,28 @@ export async function findTierLimits(
     dailyOutflow: row.dailyOutflowLimit,
     maxBalance: row.maxBalance,
   };
+}
+
+/**
+ * amount + fee of the wallet's outflows today (Lagos day) that count toward the daily limit.
+ * Call it under the wallet's lock, so two parallel outflows can't jointly slip past the limit.
+ */
+export async function outflowToday(
+  db: Pick<PrismaClient, 'transaction'>,
+  walletId: string,
+  now: number,
+): Promise<bigint> {
+  const { start, end } = lagosDayBounds(now);
+  const sum = await db.transaction.aggregate({
+    where: {
+      sourceWalletId: walletId,
+      type: { in: [...OUTFLOW_TYPES] },
+      status: { in: [...OUTFLOW_COUNTED_STATUSES] },
+      createdAt: { gte: start, lt: end },
+    },
+    _sum: { amount: true, fee: true },
+  });
+  return (sum._sum.amount ?? 0n) + (sum._sum.fee ?? 0n);
 }
 
 export type OutflowViolation =

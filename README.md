@@ -119,7 +119,7 @@ docs/              project definition, architecture, case study, API, security
 | Ledger (Stage 11): `ledger.post()` (invariants, ordered wallet locks, status and funds under the lock, cached balances) | In progress (items 1–4 of 5 done; the parallel-debit concurrency test needs real PostgreSQL) |
 | Transactions (Stage 12): record, references, state machine, history endpoints | Done |
 | Transfers (Stage 13): `POST /transfers` (idempotent, limits, fees), recipient lookup, reversals | Done. The reversal endpoint arrives with Admin (Stage 19) |
-| Payments (Stage 14): `PaymentProvider` contract + mock, deposits (`POST /payments/deposits`) | In progress (items 1–2 of 4 done; withdrawals next). Deposits complete through provider events; the webhook endpoint arrives in Stage 15 |
+| Payments (Stage 14): `PaymentProvider` contract + mock, deposits, withdrawals (`/payments/deposits`, `/payments/withdrawals`, bank name enquiry) | In progress (items 1–3 of 4 done; payments and refunds next). Both complete through provider events; the webhook endpoint arrives in Stage 15 |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).

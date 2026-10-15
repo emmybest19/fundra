@@ -347,7 +347,7 @@ D6 fee schedule as data.
 | `effective_from` | timestamptz | |
 | `is_active` | boolean | |
 
-Partial unique index `(transaction_type, currency) WHERE is_active`: at most one active rule per type and currency. Seeded with ₦0 for `TRANSFER`.
+Partial unique index `(transaction_type, currency) WHERE is_active`: at most one active rule per type and currency. Seeded with ₦0 for `TRANSFER` and a flat ₦10 for `WITHDRAWAL`.
 
 ---
 
@@ -581,7 +581,7 @@ A mutation test that removed `DEFERRABLE INITIALLY DEFERRED` made every valid po
 | Payment provider `MOCK` | `prisma/seed.ts` | Synced |
 | System ledger accounts: `PROVIDER_SETTLEMENT:MOCK:NGN` (asset), `FEE_REVENUE:NGN` (revenue), `SUSPENSE:NGN` (liability) | `prisma/seed.ts` | Created if missing. If one exists with a **different type or currency, the seed fails** and rolls back rather than altering an account that may carry entries |
 | Tier limits (D3, NGN) | `prisma/seed.ts` | **Created only if missing**: admin edits survive |
-| Fee rule `TRANSFER` / NGN: ₦0 (D6) | `prisma/seed.ts` | Created only if no **active** rule exists |
+| Fee rules (D6): `TRANSFER` / NGN ₦0, `WITHDRAWAL` / NGN ₦10 flat | `prisma/seed.ts` | Created only if no **active** rule exists |
 
 **Role → permission mapping** (separation of duties: no role except SUPER_ADMIN can both approve KYC and reverse money):
 

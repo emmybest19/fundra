@@ -603,18 +603,45 @@ The **webhook decides the deposit's outcome**, never the client's redirect.
 | Apply (`applyEvent`) | One transaction. Find the payment by (provider, provider reference) (none → `UNMATCHED`), then **lock the transaction row**, so two deliveries can't both credit (the second sees `COMPLETED` → `ALREADY_APPLIED`) |
 | Success | Lock the wallet, re-check its status and the max balance **against the current balance**, then post `Dr PROVIDER_SETTLEMENT:<provider>:<ccy> / Cr wallet` for the deposit's **own** amount → `COMPLETED`; audit `deposit.completed` (SYSTEM); outbox `deposit.completed` |
 | Failure | `FAILED` with the provider's reason (or a generic one); nothing posted; audit `deposit.failed`; outbox `deposit.failed` |
-| Held for review | Never credited, never silently refused. Recorded on `payments.metadata.review` (what the provider claimed, as it said it) and as audit `deposit.review_required`; the deposit stays as it was. Reasons: `REFERENCE_MISMATCH`, `AMOUNT_MISMATCH`, `CURRENCY_MISMATCH`, `NOT_A_DEPOSIT` (e.g. a payout event), `SUCCESS_AFTER_FAILURE` (money may have arrived after we gave up), `FAILURE_AFTER_SUCCESS`, `WALLET_FROZEN`/`WALLET_CLOSED` (frozen since it started), `MAX_BALANCE` (two open deposits that only fit one at a time). A later correct event still applies, e.g. a provider re-notifying after the wallet is unfrozen |
+| Held for review | Never credited, never silently refused. Recorded on `payments.metadata.review` (what the provider claimed, as it said it) and as audit `payment.review_required` ([payment-review.ts](../src/modules/payments/payment-review.ts), shared with withdrawals); the deposit stays as it was. Reasons: `REFERENCE_MISMATCH`, `AMOUNT_MISMATCH`, `CURRENCY_MISMATCH`, `WRONG_KIND` (e.g. a payout event), `SUCCESS_AFTER_FAILURE` (money may have arrived after we gave up), `FAILURE_AFTER_SUCCESS`, `WALLET_FROZEN`/`WALLET_CLOSED` (frozen since it started), `MAX_BALANCE` (two open deposits that only fit one at a time). A later correct event still applies, e.g. a provider re-notifying after the wallet is unfrozen |
 
 Nothing is refused at completion on purpose: once the provider has the money, refusing it would leave it nowhere. A person decides (credit later, or return it). The admin queue for held deposits comes with Admin (Stage 19).
 
 Verified on PostgreSQL 18.3: 28 checks (start, replay, every refusal, provider outage with nothing kept and the key reusable, success with the exact entries and events, re-notifications, failure, late success, wrong amount then the right one, wrong reference, payout event, unknown reference, frozen then unfrozen, two deposits over the max balance, two simultaneous deliveries, the books balanced). Three deliberate code breaks were each caught: the amount check removed, the "already completed" guard removed (a re-notification then crashes instead of being a no-op), and the wallet-status check at completion removed (the ledger's own freeze rule then refuses, so even then no money moved).
 
-### 8.4 Withdrawal
+### 8.4 Withdrawal — *Built (reserve, dispatch, apply; the webhook endpoint is Stage 15)*
 
 1. Create the transaction (`PENDING`) and a **Hold**; available balance drops immediately.
 2. Call `provider.payout()`.
 3. Webhook success: post `Dr wallet / Cr settlement`, settle the hold, mark `COMPLETED`.
 4. Webhook failure: release the hold and mark `FAILED`. Nothing is posted.
+
+[withdrawal.service.ts](../src/modules/payments/withdrawal.service.ts):
+
+| Step | Design |
+|---|---|
+| Name enquiry (`GET /payments/bank-accounts/resolve`) | The bank's name for the account, so the customer confirms who they're paying. 30 an hour per user (it reveals who owns an account). An outage is `503`, never "not found" |
+| Reserve (`POST /payments/withdrawals`) | Inside the idempotency transaction: wallet (`KYC_REQUIRED`), active provider, **name enquiry again** (the name comes from the bank, never the client), the `WITHDRAWAL` fee (₦10 flat, D6), then the wallet lock, per-transaction and daily limits on `amount + fee` (a withdrawal in flight counts), the transaction, a **hold for `amount + fee`** (`placeHold` refuses frozen or closed wallets and short funds), the `payments` row (`OUTBOUND`, full bank details for the payout) and `PROCESSING`. Audit `withdrawal.requested`, account number masked. **COMMIT** |
+| Dispatch (after COMMIT) | Only now `sendPayout`, with our reference. If the payout were sent inside the transaction and COMMIT then failed, money would leave with no record. `PENDING` → the provider reference is stored. Refused on the spot → the hold is released and the withdrawal `FAILED`. Error or timeout → **the money stays held** and the error is kept on the payment. `dispatch()` is safe to repeat (a retry job, Stage 16): it acts only on a `PROCESSING` withdrawal with no provider reference, and the provider returns the same payout for the same reference |
+| Response | The committed state (`PROCESSING`, `201`), with the destination masked and the bank's name. Replays return the same. The outcome arrives in history and as a notification |
+| Apply (`applyEvent`) | By provider reference, or **by our reference** when the webhook beat dispatch's update (it then attaches the provider reference). Transaction row locked. Success → `settleHold`: `Dr wallet (amount + fee) / Cr PROVIDER_SETTLEMENT (amount) / Cr FEE_REVENUE (fee)` → `COMPLETED`, even if the wallet was frozen since (the money has left). Failure → release the hold → `FAILED` with the reason. Audit and outbox `withdrawal.completed` / `withdrawal.failed` |
+| Held for review | As for deposits: a wrong amount (the payout is the amount, never the fee), reference, currency or kind; contrary news. `SUCCESS_AFTER_FAILURE` matters most here: money may have left after the hold was released, so a person must recover it |
+
+Verified on PostgreSQL 18.3: 32 checks covering:
+- name enquiry;
+- the exact hold, entries and events;
+- replay;
+- the per-transaction and daily limits (exactly at the limit is allowed, and a withdrawal in flight counts);
+- every refusal keeping nothing;
+- failing later and failing on the spot;
+- a payout that couldn't be sent, retried once and never twice;
+- a webhook that arrives before the provider reference is stored;
+- a wrong amount and a wrong kind;
+- a wallet frozen after the payout left;
+- two simultaneous deliveries;
+- available = ledger − active holds for every wallet.
+
+Three deliberate code breaks were each caught: dispatch re-sending an already-sent payout, the amount check removed, and matching by our own reference removed.
 
 ---
 
@@ -804,6 +831,7 @@ This reflects the repository as it stands, not the design.
 | Ledger triggers can be disabled by a database superuser | They protect against application bugs, not a compromised DBA account. The app must run as a non-owner role (Stage 25) |
 | A native PostgreSQL 16 Windows service (`postgresql-x64-16`) occupies port 5432 on the development machine, listening on all interfaces | Fundra's Docker database uses **5433** instead. That service is outside this project, but it's reachable from the local network |
 | Prisma 7.10's query engine sends overlapping queries on one interactive transaction's connection (e.g. loading `include`d relations); `pg` 8 logs a deprecation warning and **`pg` 9 will reject it** | Found in Stage 13 by `--trace-deprecation`: the stack is inside Prisma, not Fundra (Fundra's own in-transaction `Promise.all`s were made sequential). Don't upgrade `pg` to 9 until Prisma serialises in-transaction queries |
+| Withdrawals whose payout couldn't be sent stay held until `dispatch()` runs again | The money is safe (held, not lost), but nothing retries it automatically until the background jobs (Stage 16) |
 | Deposits held for review, and abandoned checkouts, stay `PROCESSING` | Resolving held deposits is an admin action (Stage 19). Expiring abandoned ones (ask `getPaymentStatus`, then fail them) belongs to the `reconcile-transactions` job |
 | Docker isn't installed on the development machine; PostgreSQL and Redis aren't available | Integration work is blocked until they are set up |
 | No `.env.example` (removed by choice) | New contributors can't see which variables are required; `config/env.ts` validation will be the only source of truth |
@@ -871,5 +899,5 @@ Admins are `User` rows holding one or more admin roles (`SUPPORT`, `COMPLIANCE`,
 
 - A fee is extra entries in the **same** ledger transaction: `Dr sender (amount + fee) / Cr recipient (amount) / Cr FEE_REVENUE (fee)`.
 - The fee and the operation therefore succeed or fail together, and the balance check covers `amount + fee`.
-- Fee amounts come from a seeded fee schedule (initially ₦0 for P2P transfers), not code.
+- Fee amounts come from a seeded fee schedule, not code: ₦0 for P2P transfers, a flat ₦10 for bank withdrawals (Stage 14; about what an NIP transfer costs). A type with no active rule fails closed.
 - The response and the transaction history show `amount`, `fee` and `total` separately.

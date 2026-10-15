@@ -66,9 +66,10 @@ describe('TIER_LIMITS', () => {
 });
 
 describe('FEE_RULES', () => {
-  it('starts P2P transfers at zero fee (D6) within the bps CHECK', () => {
+  it('starts P2P transfers free and withdrawals at a flat ₦10 (D6), within the bps CHECK', () => {
     expect(FEE_RULES).toEqual([
       { transactionType: 'TRANSFER', currency: 'NGN', flatFee: 0n, percentageBps: 0 },
+      { transactionType: 'WITHDRAWAL', currency: 'NGN', flatFee: 1_000n, percentageBps: 0 },
     ]);
   });
 });

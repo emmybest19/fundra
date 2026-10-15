@@ -96,6 +96,7 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 422 | `SELF_TRANSFER` | A transfer to yourself |
 | 409 | `TRANSACTION_NOT_REVERSIBLE` | (Admin) Only a completed transfer can be reversed, and only once |
 | 403 | `TRANSACTION_SELF_ACTION` | (Admin) You can't reverse a transaction involving your own wallet |
+| 404 | `BANK_ACCOUNT_NOT_FOUND` | The bank has no account with that bank code and number (withdrawals) |
 | 409 | `KYC_TIER_ORDER` | Tiers are taken in order; complete the previous tier first |
 | 409 | `KYC_TIER_ALREADY_APPROVED` | You're already verified at this tier or higher |
 | 409 | `KYC_UNDER_REVIEW` | A Tier 3 submission is being reviewed; documents and address can't change until it's decided |
@@ -594,7 +595,7 @@ Retrying with the same key replays this response (`Idempotent-Replayed: true`) a
 
 ### Payments (money in and out)
 
-Deposits now; withdrawals and payments follow. They go through a payment provider (the mock today). Amounts are kobo strings (D1). Every route needs a verified account and a wallet, and responses are never cached.
+Deposits and withdrawals now; payments follow. They go through a payment provider (the mock today). Amounts are kobo strings (D1). Every route needs a verified account and a wallet, and responses are never cached.
 
 #### `POST /api/v1/payments/deposits` (idempotent)
 
@@ -625,6 +626,45 @@ Send the customer to `checkoutUrl`. The deposit completes (or fails) **only when
 | `422 LIMIT_MAX_BALANCE_EXCEEDED` | The deposit would take your balance over your tier's maximum (the message says the limit) |
 | `422 IDEMPOTENCY_KEY_REUSED` | The key was used for a different request |
 | `503 SERVICE_UNAVAILABLE` | The payment provider is unavailable. Nothing was charged or kept; retry with the same key after `Retry-After` |
+
+#### `GET /api/v1/payments/bank-accounts/resolve?bankCode=058&accountNumber=0123456789`
+
+Name enquiry: who the bank says owns the account. Show it to the customer before they withdraw. Rate limit: 30 per hour.
+
+```json
+{ "data": { "account": { "bankCode": "058", "accountNumber": "0123456789", "accountName": "ADA OKAFOR" } } }
+```
+
+`404 BANK_ACCOUNT_NOT_FOUND` if the bank has no such account; `503` if the provider can't be reached (never reported as "not found").
+
+#### `POST /api/v1/payments/withdrawals` (idempotent)
+
+```json
+{ "bankCode": "058", "accountNumber": "0123456789", "amount": "250000", "currency": "NGN", "description": "Rent" }
+```
+
+- `amount` reaches the bank account; the withdrawal fee (₦10 today) is charged on top, so your wallet is debited `amount + fee`. `description` is optional, at most 100 characters, and shown on the bank statement.
+- The account name always comes from the bank, never from the request.
+- Rate limit: 10 per minute.
+
+**201** once the money is reserved (held: your available balance drops at once), with where it's going:
+
+```json
+{ "data": { "withdrawal": { "id": "…", "type": "WITHDRAWAL", "status": "PROCESSING", "direction": "OUT", "amount": "250000", "fee": "1000", "total": "251000", "…": "…" }, "destination": { "bankCode": "058", "accountNumber": "******6789", "accountName": "ADA OKAFOR" } } }
+```
+
+The payout is sent after this point. It ends `COMPLETED` (the hold becomes the real debit) or `FAILED` (the hold is released and the money is spendable again), as the provider reports; follow it in [`GET /transactions/:id`](#get-apiv1transactionsid). Even a payout the bank refuses on the spot answers `201 PROCESSING` and then shows as `FAILED`. Replays return the original response.
+
+| Error | When |
+|---|---|
+| `400 IDEMPOTENCY_KEY_REQUIRED` | No `Idempotency-Key` header |
+| `403 KYC_REQUIRED` | You don't have a wallet yet: complete KYC Tier 1 |
+| `404 BANK_ACCOUNT_NOT_FOUND` | The bank has no such account |
+| `422 INSUFFICIENT_FUNDS` | Your available balance can't cover amount + fee |
+| `422 LIMIT_PER_TRANSACTION_EXCEEDED` / `LIMIT_DAILY_OUTFLOW_EXCEEDED` | Over your tier's limits (fees included; withdrawals and transfers share the daily limit) |
+| `422 WALLET_FROZEN` / `WALLET_CLOSED` | Your wallet is restricted or closed |
+| `422 IDEMPOTENCY_KEY_REUSED` | The key was used for a different request |
+| `503 SERVICE_UNAVAILABLE` | The provider can't be reached for the name check. Nothing was taken; retry with the same key |
 
 ### Transactions (your history)
 

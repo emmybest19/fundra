@@ -7,8 +7,16 @@ import { errorHandler } from '../../../src/middleware/error.middleware.ts';
 import { MemoryRateLimitStore } from '../../../src/middleware/rate-limit.middleware.ts';
 import { createRequestLogger } from '../../../src/middleware/request-logger.middleware.ts';
 import type { DepositService } from '../../../src/modules/payments/deposit.service.ts';
-import { createDepositBody } from '../../../src/modules/payments/payment.schema.ts';
+import {
+  bankAccountQuery,
+  createDepositBody,
+  createWithdrawalBody,
+} from '../../../src/modules/payments/payment.schema.ts';
 import { createPaymentRouter } from '../../../src/modules/payments/payment.routes.ts';
+import {
+  maskAccountNumber,
+  type WithdrawalService,
+} from '../../../src/modules/payments/withdrawal.service.ts';
 
 describe('createDepositBody', () => {
   it('takes a positive kobo string and a currency', () => {
@@ -28,6 +36,42 @@ describe('createDepositBody', () => {
     expect(
       createDepositBody.safeParse({ amount: '1', currency: 'NGN', walletId: 'x' }).success,
     ).toBe(false);
+  });
+});
+
+describe('createWithdrawalBody and bankAccountQuery', () => {
+  const base = { bankCode: '058', accountNumber: '0123456789', amount: '250000', currency: 'NGN' };
+
+  it('takes a bank code, a 10-digit account number, the amount and an optional description', () => {
+    expect(createWithdrawalBody.parse({ ...base, description: ' Rent ' })).toEqual({
+      ...base,
+      amount: 250_000n,
+      description: 'Rent',
+    });
+    expect(bankAccountQuery.parse({ bankCode: ' 058 ', accountNumber: '0123456789' })).toEqual({
+      bankCode: '058',
+      accountNumber: '0123456789',
+    });
+  });
+
+  it.each([
+    ['a short account number', { accountNumber: '012345678' }],
+    ['letters in the account number', { accountNumber: '01234567AB' }],
+    ['a bank name for a code', { bankCode: 'GTB' }],
+    ['a zero amount', { amount: '0' }],
+    ['a numeric amount', { amount: 250000 }],
+    ['a description over 100 characters', { description: 'x'.repeat(101) }],
+    ['an account name from the client', { accountName: 'ADA OKAFOR' }],
+    ['a fee from the client', { fee: '0' }],
+  ])('refuses %s', (_label, change) => {
+    expect(createWithdrawalBody.safeParse({ ...base, ...change }).success).toBe(false);
+  });
+});
+
+describe('maskAccountNumber', () => {
+  it('shows only the last four digits', () => {
+    expect(maskAccountNumber('0123456789')).toBe('******6789');
+    expect(maskAccountNumber('123')).toBe('123');
   });
 });
 
@@ -52,18 +96,31 @@ describe('payments router', () => {
       }),
     };
     const app = express();
+    const withdrawals = {
+      create: vi.fn().mockResolvedValue({
+        status: 201,
+        body: { data: { withdrawal: { id: 'w' } } },
+        replayed: false,
+      }),
+      resolveBankAccount: vi.fn().mockResolvedValue({
+        bankCode: '058',
+        accountNumber: '0123456789',
+        accountName: 'ADA OKAFOR',
+      }),
+    };
     app.use(express.json());
     app.use(createRequestLogger(createLogger({ level: 'silent', pretty: false })));
     app.use(
       '/payments',
       createPaymentRouter({
         deposits: deposits as unknown as DepositService,
+        withdrawals: withdrawals as unknown as WithdrawalService,
         authenticate: fakeAuthenticate,
         rateLimitStore: new MemoryRateLimitStore(),
       }),
     );
     app.use(errorHandler);
-    return { app, deposits };
+    return { app, deposits, withdrawals };
   }
   const body = { amount: '500000', currency: 'NGN' };
 
@@ -124,5 +181,42 @@ describe('payments router', () => {
         .send(body);
     for (let i = 0; i < 10; i++) expect((await send(`key-0000000${String(i)}`)).status).toBe(201);
     expect((await send('key-00000010')).status).toBe(429);
+  });
+
+  it('withdraws with an Idempotency-Key, passing the parsed body', async () => {
+    const { app, withdrawals } = setup();
+    const send = () =>
+      request(app)
+        .post('/payments/withdrawals')
+        .set('X-Test-User', 'u')
+        .send({ bankCode: '058', accountNumber: '0123456789', amount: '250000', currency: 'NGN' });
+
+    expect((await send()).status).toBe(400);
+    expect(withdrawals.create).not.toHaveBeenCalled();
+    const res = await send().set('Idempotency-Key', 'key-12345678');
+    expect(res.status).toBe(201);
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(withdrawals.create).toHaveBeenCalledWith(
+      'u',
+      { bankCode: '058', accountNumber: '0123456789', amount: 250_000n, currency: 'NGN' },
+      expect.objectContaining({ key: 'key-12345678' }),
+      expect.anything(),
+    );
+  });
+
+  it('resolves a bank account (name enquiry), 30 an hour per user', async () => {
+    const { app } = setup();
+    const ask = () =>
+      request(app)
+        .get('/payments/bank-accounts/resolve?bankCode=058&accountNumber=0123456789')
+        .set('X-Test-User', 'u');
+
+    expect((await ask()).body).toEqual({
+      data: {
+        account: { bankCode: '058', accountNumber: '0123456789', accountName: 'ADA OKAFOR' },
+      },
+    });
+    for (let i = 1; i < 30; i++) await ask();
+    expect((await ask()).status).toBe(429);
   });
 });

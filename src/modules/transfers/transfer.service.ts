@@ -15,7 +15,6 @@ import type {
   IdempotentResult,
 } from '../../common/idempotency/idempotency.service.ts';
 import { writeOutboxEvent } from '../../common/outbox/outbox.writer.ts';
-import { lagosDayBounds } from '../../common/utils/business-day.ts';
 import { success } from '../../common/utils/response.ts';
 import type { Prisma, PrismaClient, Wallet } from '../../generated/prisma/client.ts';
 import { recordAudit } from '../audit/audit.service.ts';
@@ -25,9 +24,8 @@ import {
   checkOutflow,
   findTierLimits,
   inflowLimitError,
-  OUTFLOW_COUNTED_STATUSES,
-  OUTFLOW_TYPES,
   outflowLimitError,
+  outflowToday,
 } from '../kyc/tier-limits.ts';
 import { LedgerRefusal, lockWallets, post } from '../ledger/ledger.service.ts';
 import { feeRevenueAccountCode } from '../ledger/ledger.utils.ts';
@@ -37,7 +35,8 @@ import {
   transitionTransaction,
 } from '../transactions/transaction.service.ts';
 import type { CreateTransferInput, RecipientQuery } from './transfer.schema.ts';
-import { computeFee, type RecipientView } from './transfer.types.ts';
+import { feeFor } from '../transactions/fees.ts';
+import type { RecipientView } from './transfer.types.ts';
 
 type Tx = Prisma.TransactionClient;
 
@@ -137,7 +136,7 @@ export class TransferService {
       });
     }
 
-    const fee = await this.#fee(tx, input.amount, currency, now);
+    const fee = await feeFor(tx, 'TRANSFER', input.amount, currency, now);
     // One at a time: a transaction's queries share one connection (pg@9 will reject overlap).
     const senderTier = await this.#tier(tx, senderId);
     const recipientTier = await this.#tier(tx, recipient.userId);
@@ -154,8 +153,12 @@ export class TransferService {
     const locked = new Map(
       (await lockWallets(tx, [sender.id, recipient.id])).map((w) => [w.id, w]),
     );
-    const outflowToday = await this.#outflowToday(tx, sender.id, now);
-    const outflow = checkOutflow({ limits: senderLimits, amount: input.amount, fee, outflowToday });
+    const outflow = checkOutflow({
+      limits: senderLimits,
+      amount: input.amount,
+      fee,
+      outflowToday: await outflowToday(tx, sender.id, now),
+    });
     if (outflow !== null) throw outflowLimitError(outflow, currency);
     const recipientLimits = await findTierLimits(tx, recipientTier, currency);
     const lockedRecipient = locked.get(recipient.id);
@@ -277,37 +280,8 @@ export class TransferService {
     return wallet;
   }
 
-  /** The active TRANSFER fee rule; a missing rule fails closed (a configuration error). */
-  async #fee(tx: Tx, amount: bigint, currency: Currency, now: number): Promise<bigint> {
-    const rule = await tx.feeRule.findFirst({
-      where: {
-        transactionType: 'TRANSFER',
-        currency,
-        isActive: true,
-        effectiveFrom: { lte: new Date(now) },
-      },
-    });
-    if (rule === null) throw new Error(`No active TRANSFER fee rule for ${currency}`);
-    return computeFee(amount, rule);
-  }
-
   async #tier(tx: Tx, userId: string): Promise<number> {
     const profile = await tx.kycProfile.findUnique({ where: { userId }, select: { tier: true } });
     return profile?.tier ?? 0;
-  }
-
-  /** amount + fee of the wallet's outflows today (Lagos day) that count toward the limit. */
-  async #outflowToday(tx: Tx, walletId: string, now: number): Promise<bigint> {
-    const { start, end } = lagosDayBounds(now);
-    const sum = await tx.transaction.aggregate({
-      where: {
-        sourceWalletId: walletId,
-        type: { in: [...OUTFLOW_TYPES] },
-        status: { in: [...OUTFLOW_COUNTED_STATUSES] },
-        createdAt: { gte: start, lt: end },
-      },
-      _sum: { amount: true, fee: true },
-    });
-    return (sum._sum.amount ?? 0n) + (sum._sum.fee ?? 0n);
   }
 }

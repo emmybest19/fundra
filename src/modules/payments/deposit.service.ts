@@ -27,41 +27,22 @@ import {
   transactionViewFor,
   transitionTransaction,
 } from '../transactions/transaction.service.ts';
+import {
+  holdForReview,
+  recordProviderStatus,
+  type PaymentEvent,
+  type PaymentEventOutcome,
+  type PaymentReviewReason,
+} from './payment-review.ts';
 import type { CreateDepositInput } from './payment.schema.ts';
 import {
   PaymentProviderUnavailableError,
   type PaymentProvider,
-  type ProviderEvent,
 } from './providers/payment-provider.ts';
 
 type Tx = Prisma.TransactionClient;
 
 const MAX_ATTEMPTS = 3;
-
-export type DepositEvent = Extract<ProviderEvent, { kind: 'DEPOSIT' | 'PAYOUT' }>;
-
-/** Why a deposit event was held instead of applied. Each needs a person to look at it. */
-export type DepositReviewReason =
-  | 'NOT_A_DEPOSIT'
-  | 'REFERENCE_MISMATCH'
-  | 'AMOUNT_MISMATCH'
-  | 'CURRENCY_MISMATCH'
-  /** Success reported for a deposit Fundra already marked FAILED: money may have arrived. */
-  | 'SUCCESS_AFTER_FAILURE'
-  /** Failure reported for a deposit already credited. */
-  | 'FAILURE_AFTER_SUCCESS'
-  | 'WALLET_FROZEN'
-  | 'WALLET_CLOSED'
-  | 'MAX_BALANCE';
-
-/** What applying a provider event did; the webhook processor records it on the event. */
-export type DepositEventOutcome =
-  | { outcome: 'COMPLETED' | 'FAILED'; transactionId: string }
-  /** The deposit already had this outcome: a re-notification, nothing to do. */
-  | { outcome: 'ALREADY_APPLIED'; transactionId: string }
-  | { outcome: 'REVIEW'; transactionId: string; reason: DepositReviewReason }
-  /** No deposit has this provider reference. */
-  | { outcome: 'UNMATCHED' };
 
 const unavailable = (cause: unknown) =>
   new ServiceUnavailableError(
@@ -203,7 +184,7 @@ export class DepositService {
    * agree with the deposit (reference, amount, currency) or arrive too late are recorded for
    * review and change no money.
    */
-  async applyEvent(event: DepositEvent): Promise<DepositEventOutcome> {
+  async applyEvent(event: PaymentEvent): Promise<PaymentEventOutcome> {
     for (let attempt = 1; ; attempt++) {
       try {
         return await this.#db.$transaction((tx) => this.#apply(tx, event));
@@ -213,7 +194,7 @@ export class DepositService {
     }
   }
 
-  async #apply(tx: Tx, event: DepositEvent): Promise<DepositEventOutcome> {
+  async #apply(tx: Tx, event: PaymentEvent): Promise<PaymentEventOutcome> {
     const provider = await tx.paymentProvider.findUniqueOrThrow({
       where: { code: this.#provider.code },
       select: { id: true, code: true },
@@ -234,8 +215,14 @@ export class DepositService {
       include: { destinationWallet: { select: { id: true, userId: true, ledgerAccountId: true } } },
     });
     const wallet = transaction.destinationWallet;
-    const review = (reason: DepositReviewReason) =>
-      this.#holdForReview(tx, transaction.id, transaction.reference, event, reason);
+    const review = (reason: PaymentReviewReason) =>
+      holdForReview(tx, {
+        transactionId: transaction.id,
+        reference: transaction.reference,
+        event,
+        reason,
+        now: this.#now(),
+      });
 
     if (
       event.kind !== 'DEPOSIT' ||
@@ -243,7 +230,7 @@ export class DepositService {
       payment.direction !== 'INBOUND' ||
       wallet === null
     ) {
-      return review('NOT_A_DEPOSIT');
+      return review('WRONG_KIND');
     }
 
     // Already decided: the same news again is a no-op; contrary news needs a person.
@@ -269,7 +256,7 @@ export class DepositService {
         failureReason: reason,
         now: this.#now(),
       });
-      await this.#recordProviderStatus(tx, transaction.id, event);
+      await recordProviderStatus(tx, transaction.id, event);
       await recordAudit(tx, {
         action: 'deposit.failed',
         actor: { type: 'SYSTEM' },
@@ -292,7 +279,7 @@ export class DepositService {
     // The money is at the provider. Credit it unless the wallet can't take it right now:
     // then it waits for a person (credit later, or return it), never silently refused.
     const [lockedWallet] = await lockWallets(tx, [wallet.id]);
-    if (lockedWallet === undefined) return review('NOT_A_DEPOSIT');
+    if (lockedWallet === undefined) return review('WRONG_KIND');
     const refusal = walletStatusRefusal(lockedWallet.status, 'DEPOSIT');
     if (refusal !== null) return review(refusal);
     const profile = await tx.kycProfile.findUnique({
@@ -327,7 +314,7 @@ export class DepositService {
       ],
     });
     await transitionTransaction(tx, transaction.id, 'COMPLETED', { now: this.#now() });
-    await this.#recordProviderStatus(tx, transaction.id, event);
+    await recordProviderStatus(tx, transaction.id, event);
     await recordAudit(tx, {
       action: 'deposit.completed',
       actor: { type: 'SYSTEM' },
@@ -352,45 +339,5 @@ export class DepositService {
       },
     });
     return { outcome: 'COMPLETED', transactionId: transaction.id };
-  }
-
-  async #recordProviderStatus(tx: Tx, transactionId: string, event: DepositEvent): Promise<void> {
-    await tx.payment.update({
-      where: { transactionId },
-      data: { providerStatus: event.eventType },
-    });
-  }
-
-  /**
-   * Leaves the deposit as it is and records why: on the payment (for the admin queue,
-   * Stage 19) and in the audit log. What the provider claimed is kept as it said it.
-   */
-  async #holdForReview(
-    tx: Tx,
-    transactionId: string,
-    reference: string,
-    event: DepositEvent,
-    reason: DepositReviewReason,
-  ): Promise<DepositEventOutcome> {
-    const review = {
-      reason,
-      eventId: event.eventId,
-      eventType: event.eventType,
-      reportedAmount: event.amount.toString(),
-      reportedCurrency: event.currency,
-      reportedReference: event.reference,
-      at: new Date(this.#now()).toISOString(),
-    };
-    await tx.payment.update({
-      where: { transactionId },
-      data: { metadata: { review } },
-    });
-    await recordAudit(tx, {
-      action: 'deposit.review_required',
-      actor: { type: 'SYSTEM' },
-      resource: { type: 'transaction', id: transactionId },
-      metadata: { reference, ...review },
-    });
-    return { outcome: 'REVIEW', transactionId, reason };
   }
 }

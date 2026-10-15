@@ -12,7 +12,7 @@ import {
   recipientQuery,
 } from '../../../src/modules/transfers/transfer.schema.ts';
 import type { TransferService } from '../../../src/modules/transfers/transfer.service.ts';
-import { computeFee } from '../../../src/modules/transfers/transfer.types.ts';
+import { computeFee } from '../../../src/modules/transactions/fees.ts';
 import { dammCheckDigit } from '../../../src/modules/wallets/account-number.ts';
 
 const ACCOUNT = `123456789${String(dammCheckDigit('123456789'))}`;
