@@ -704,7 +704,7 @@ If the biller later gives money back (in full or in part), it arrives as a separ
 
 Called by the payment provider, not by apps. No user authentication: the request must carry the provider's signature (for the mock, `X-Mock-Signature`: hex HMAC-SHA512 of the exact body with `PAYMENT_WEBHOOK_SECRET`). The body is read raw, up to 64 KB.
 
-**200** `{ "data": { "received": true, "status": "ACCEPTED" } }`. `status` is `ACCEPTED` (stored for processing), `DUPLICATE` (this event ID was already received; nothing new happened) or `IGNORED` (stored, but not an event Fundra acts on). All three are 200 so the provider stops retrying.
+**200** `{ "data": { "received": true, "status": "ACCEPTED" } }`, after the event has been stored and processed (the deposit, payout, bill payment or refund updated). `status` is `ACCEPTED` (new), `DUPLICATE` (this event ID was already received; nothing new happened) or `IGNORED` (stored, but not an event Fundra acts on). All three are 200 so the provider stops retrying; if processing itself failed, the event is kept and Fundra retries it.
 
 | Error | When |
 |---|---|

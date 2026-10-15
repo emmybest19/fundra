@@ -8,12 +8,24 @@ import { errorHandler } from '../../../src/middleware/error.middleware.ts';
 import { createRequestLogger } from '../../../src/middleware/request-logger.middleware.ts';
 import { MockPaymentProvider } from '../../../src/modules/payments/providers/mock-payment-provider.ts';
 import { createWebhookRouter } from '../../../src/modules/webhooks/webhook.routes.ts';
+import type { WebhookProcessor } from '../../../src/modules/webhooks/webhook.processor.ts';
 import type { WebhookService } from '../../../src/modules/webhooks/webhook.service.ts';
 
-function setup(receive = vi.fn()) {
+function setup(
+  receive = vi.fn(),
+  process = vi
+    .fn()
+    .mockResolvedValue({ webhookEventId: 'w1', status: 'PROCESSED', skipped: false }),
+) {
   const app = express();
   app.use(createRequestLogger(createLogger({ level: 'silent', pretty: false })));
-  app.use('/webhooks', createWebhookRouter({ webhooks: { receive } as unknown as WebhookService }));
+  app.use(
+    '/webhooks',
+    createWebhookRouter({
+      webhooks: { receive } as unknown as WebhookService,
+      processor: { process } as unknown as WebhookProcessor,
+    }),
+  );
   // What the real app does next: JSON parsing must not touch the webhook body.
   app.use(express.json());
   app.use(errorHandler);
@@ -95,5 +107,34 @@ describe('webhooks router', () => {
 
     expect(res.status).toBe(401);
     expect((res.body as ApiErrorBody).error.code).toBe('INVALID_WEBHOOK_SIGNATURE');
+  });
+
+  it('processes accepted events and redeliveries, never ignored ones', async () => {
+    for (const [status, processed] of [
+      ['ACCEPTED', true],
+      ['DUPLICATE', true],
+      ['IGNORED', false],
+    ] as const) {
+      const receive = vi.fn().mockResolvedValue({ ...accepted, status });
+      const process = vi
+        .fn()
+        .mockResolvedValue({ webhookEventId: 'w1', status: 'PROCESSED', skipped: false });
+      await request(setup(receive, process)).post('/webhooks/payments').send('{"a":1}');
+      expect(process.mock.calls.length, status).toBe(processed ? 1 : 0);
+    }
+  });
+
+  it('answers 200 even when processing failed: the event is stored and will be retried', async () => {
+    const receive = vi.fn().mockResolvedValue(accepted);
+    const process = vi.fn().mockResolvedValue({
+      webhookEventId: 'w1',
+      status: 'FAILED',
+      skipped: false,
+      lastError: 'boom',
+    });
+    const res = await request(setup(receive, process)).post('/webhooks/payments').send('{"a":1}');
+
+    expect(res.status).toBe(200);
+    expect(process).toHaveBeenCalledWith('w1');
   });
 });

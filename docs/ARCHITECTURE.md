@@ -665,7 +665,7 @@ Verified on PostgreSQL 18.3: 26 checks covering:
 
 Three deliberate code breaks were each caught: refund dedupe removed, the refund total cap removed, and the event-kind check removed.
 
-### 8.6 Webhooks — *Built (receive and persist; processing is item 2)*
+### 8.6 Webhooks — *Built*
 
 `POST /api/v1/webhooks/payments` ([webhooks module](../src/modules/webhooks/)):
 
@@ -684,6 +684,27 @@ Verified on PostgreSQL 18.3 through the real app: 12 checks covering:
 - signed-but-malformed, an ignored type, a text/plain content type, and a body over 64 KB.
 
 Three deliberate code breaks were each caught: the signature check skipped, a duplicate insert treated as an error, and the body re-serialised before verification (what a global JSON parser would do).
+
+**Processing** ([webhook.processor.ts](../src/modules/webhooks/webhook.processor.ts)):
+
+| Concern | Design |
+|---|---|
+| Dispatch | The normalized event is rebuilt from the stored payload (the provider's parser ignores jsonb's key order) and routed: `DEPOSIT` → `DepositService.applyEvent`; `PAYOUT` / `BILL` → `OutboundPaymentService.applyEvent`; `REFUND` → `applyRefund` |
+| Recorded on the event | `COMPLETED` / `FAILED` / `ALREADY_APPLIED` → `PROCESSED` with the transaction linked and `processed_at`. Held for review → `PROCESSED` too (a person owns it now), with `last_error` = `Held for review: <reason>`. `UNMATCHED` or an exception → `FAILED` with the reason, to be tried again (maybe our side hadn't committed yet). Every run counts an attempt; after 10 the event is left for a person |
+| When | **Inline**, right after the event is stored and before the `200`: one short transaction. A redelivery of an event that isn't `PROCESSED` yet (the provider retrying) processes it again, so the provider's retries are ours too. The answer is `200` whatever processing did: the event is stored, and retrying is now Fundra's job. `processPending()` sweeps `RECEIVED` and `FAILED` events (oldest first); the `process-webhook` job runs it from Stage 16, when processing also moves off the request |
+| Safety | Running it twice for the same news is harmless: the payment services lock the transaction row and answer `ALREADY_APPLIED`. A processed event is skipped without touching anything |
+
+Verified on PostgreSQL 18.3, from signed HTTP delivery to the ledger, with 15 checks covering:
+- a deposit, a payout succeeding and one failing, a bill payment, and a refund (redelivered and re-notified, still credited once);
+- a duplicate skipped, and a re-notification already applied;
+- a wrong amount held for review;
+- an unmatched event marked `FAILED`, then retried on redelivery;
+- a stored-but-unprocessed event swept up by `processPending`;
+- an event out of attempts left alone, and an ignored type never processed;
+- five identical deliveries in a row, credited once;
+- the books balanced.
+
+Three deliberate code breaks were each caught: refunds misrouted, the "already processed" skip removed, and an unmatched event recorded as processed.
 
 ---
 
@@ -873,6 +894,8 @@ This reflects the repository as it stands, not the design.
 | Ledger triggers can be disabled by a database superuser | They protect against application bugs, not a compromised DBA account. The app must run as a non-owner role (Stage 25) |
 | A native PostgreSQL 16 Windows service (`postgresql-x64-16`) occupies port 5432 on the development machine, listening on all interfaces | Fundra's Docker database uses **5433** instead. That service is outside this project, but it's reachable from the local network |
 | Prisma 7.10's query engine sends overlapping queries on one interactive transaction's connection (e.g. loading `include`d relations); `pg` 8 logs a deprecation warning and **`pg` 9 will reject it** | Found in Stage 13 by `--trace-deprecation`: the stack is inside Prisma, not Fundra (Fundra's own in-transaction `Promise.all`s were made sequential). Don't upgrade `pg` to 9 until Prisma serialises in-transaction queries |
+| Webhooks are processed inline on the request, and nothing sweeps `FAILED` ones on a schedule yet | A provider redelivery retries them; the `process-webhook` job (Stage 16) runs `processPending()` and takes processing off the request |
+| "At once" webhook checks run one after another on PGlite | PGlite's socket server mis-routes responses when concurrent statements fail (a test-server limit, probed). Simultaneous identical deliveries need real PostgreSQL (Docker): same deferral as the Stage 11 parallel-debit test. The unique index and the row locks are what make them safe |
 | Withdrawals whose payout couldn't be sent stay held until `dispatch()` runs again | The money is safe (held, not lost), but nothing retries it automatically until the background jobs (Stage 16) |
 | Deposits held for review, and abandoned checkouts, stay `PROCESSING` | Resolving held deposits is an admin action (Stage 19). Expiring abandoned ones (ask `getPaymentStatus`, then fail them) belongs to the `reconcile-transactions` job |
 | Docker isn't installed on the development machine; PostgreSQL and Redis aren't available | Integration work is blocked until they are set up |

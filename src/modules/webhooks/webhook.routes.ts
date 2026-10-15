@@ -2,13 +2,19 @@
 // and express.json() would replace them with a re-parsed object.
 import express, { Router } from 'express';
 import { createWebhookController } from './webhook.controller.ts';
+import type { WebhookProcessor } from './webhook.processor.ts';
 import type { WebhookService } from './webhook.service.ts';
 
 /** Provider payloads are small; anything bigger is not a webhook. */
 export const WEBHOOK_BODY_LIMIT = '64kb';
 
-export function createWebhookRouter({ webhooks }: { webhooks: WebhookService }): Router {
-  const controller = createWebhookController(webhooks);
+export interface WebhookRouterDependencies {
+  webhooks: WebhookService;
+  processor: WebhookProcessor;
+}
+
+export function createWebhookRouter({ webhooks, processor }: WebhookRouterDependencies): Router {
+  const controller = createWebhookController(webhooks, processor);
   const router = Router();
 
   // Any content type: the signature, not the header, says whether the bytes are genuine.

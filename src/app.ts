@@ -18,6 +18,10 @@ import type { PaymentProvider } from './modules/payments/providers/payment-provi
 import { createHealthRouter } from './modules/health/health.routes.ts';
 import type { HealthService } from './modules/health/health.service.ts';
 import type { MessageSender } from './modules/notifications/notification.types.ts';
+import { IdempotencyService } from './common/idempotency/idempotency.service.ts';
+import { DepositService } from './modules/payments/deposit.service.ts';
+import { OutboundPaymentService } from './modules/payments/outbound-payment.service.ts';
+import { WebhookProcessor } from './modules/webhooks/webhook.processor.ts';
 import { createWebhookRouter } from './modules/webhooks/webhook.routes.ts';
 import { WebhookService } from './modules/webhooks/webhook.service.ts';
 import { createApiRouter } from './routes/index.ts';
@@ -67,7 +71,15 @@ export function createApp({
   // Before JSON parsing: webhook signatures cover the raw bytes (docs/ARCHITECTURE.md §8.6).
   app.use(
     '/api/v1/webhooks',
-    createWebhookRouter({ webhooks: new WebhookService(db, paymentProvider) }),
+    createWebhookRouter({
+      webhooks: new WebhookService(db, paymentProvider),
+      processor: new WebhookProcessor(
+        db,
+        paymentProvider,
+        new DepositService(db, paymentProvider, new IdempotencyService(db)),
+        new OutboundPaymentService(db, paymentProvider, new IdempotencyService(db)),
+      ),
+    }),
   );
 
   app.use(jsonBody);
