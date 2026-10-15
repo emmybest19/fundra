@@ -8,7 +8,7 @@ export const MAX_RECONNECT_DELAY_MS = 5_000;
 /**
  * Creates a client tuned for request paths: commands fail immediately while Redis is
  * unreachable instead of queueing, so no HTTP request hangs on Redis. It reconnects in the
- * background with capped backoff. (BullMQ needs different options; see Stage 16.)
+ * background with capped backoff. BullMQ uses createQueueConnection instead.
  */
 export function createRedisClient(url: string): Redis {
   const client = new Redis(url, {
@@ -31,6 +31,33 @@ export function createRedisClient(url: string): Redis {
     logger.warn({ err }, 'redis connection error; retrying in the background');
   });
 
+  return client;
+}
+
+/**
+ * A connection for BullMQ (queues and workers), tuned the other way round: commands wait
+ * through an outage instead of failing (`maxRetriesPerRequest: null`, which BullMQ's
+ * blocking commands require), and the protocol is pinned to RESP2. ioredis 6 defaults to
+ * RESP3; BullMQ's scripts and blocking reads were written against RESP2 replies, so pinning
+ * removes the question rather than relying on ioredis's RESP2-shaped "legacy" mode.
+ */
+export function createQueueConnection(url: string): Redis {
+  const client = new Redis(url, {
+    maxRetriesPerRequest: null,
+    protocol: 2,
+    connectTimeout: 5_000,
+    retryStrategy: (attempt) => Math.min(attempt * 200, MAX_RECONNECT_DELAY_MS),
+  });
+  let outageReported = false;
+  client.on('ready', () => {
+    if (outageReported) logger.info('queue redis connection restored');
+    outageReported = false;
+  });
+  client.on('error', (err) => {
+    if (outageReported) return;
+    outageReported = true;
+    logger.warn({ err }, 'queue redis connection error; retrying in the background');
+  });
   return client;
 }
 

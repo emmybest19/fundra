@@ -18,10 +18,8 @@ import type { PaymentProvider } from './modules/payments/providers/payment-provi
 import { createHealthRouter } from './modules/health/health.routes.ts';
 import type { HealthService } from './modules/health/health.service.ts';
 import type { MessageSender } from './modules/notifications/notification.types.ts';
-import { IdempotencyService } from './common/idempotency/idempotency.service.ts';
-import { DepositService } from './modules/payments/deposit.service.ts';
-import { OutboundPaymentService } from './modules/payments/outbound-payment.service.ts';
-import { WebhookProcessor } from './modules/webhooks/webhook.processor.ts';
+import { createWebhookProcessor } from './modules/webhooks/webhook.processor.ts';
+import type { WebhookQueue } from './modules/webhooks/webhook.controller.ts';
 import { createWebhookRouter } from './modules/webhooks/webhook.routes.ts';
 import { WebhookService } from './modules/webhooks/webhook.service.ts';
 import { createApiRouter } from './routes/index.ts';
@@ -41,6 +39,8 @@ export interface AppDependencies {
   documentStorage: DocumentStorage;
   /** Deposits and withdrawals (Stage 14); the mock until a sandbox provider is added. */
   paymentProvider: PaymentProvider;
+  /** The BullMQ `webhooks` queue (Stage 16): webhook processing is handed to the worker. */
+  webhookQueue: WebhookQueue;
 }
 
 /** Middleware order is deliberate; see docs/ARCHITECTURE.md §5. */
@@ -53,6 +53,7 @@ export function createApp({
   kycProvider,
   documentStorage,
   paymentProvider,
+  webhookQueue,
 }: AppDependencies): Express {
   const app = express();
 
@@ -73,12 +74,8 @@ export function createApp({
     '/api/v1/webhooks',
     createWebhookRouter({
       webhooks: new WebhookService(db, paymentProvider),
-      processor: new WebhookProcessor(
-        db,
-        paymentProvider,
-        new DepositService(db, paymentProvider, new IdempotencyService(db)),
-        new OutboundPaymentService(db, paymentProvider, new IdempotencyService(db)),
-      ),
+      queue: webhookQueue,
+      processor: createWebhookProcessor(db, paymentProvider),
     }),
   );
 

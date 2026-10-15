@@ -30,6 +30,7 @@ function appWith(
     paymentProvider: new MockPaymentProvider({
       webhookSecret: 'test-only-payment-webhook-secret-not-for-production',
     }),
+    webhookQueue: { add: () => Promise.reject(new Error('no queue in this test')) },
   });
 }
 

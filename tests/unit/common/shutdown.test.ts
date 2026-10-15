@@ -130,4 +130,23 @@ describe('createShutdown', () => {
     expect(onShutdownStart).toHaveBeenCalledOnce();
     expect(exit).toHaveBeenCalledOnce();
   });
+
+  it('works without an HTTP server (the worker): cleanup in order, then exit 0', async () => {
+    const order: string[] = [];
+    const exit = vi.fn();
+    const shutdown = createShutdown({
+      logger,
+      cleanup: [
+        () => Promise.resolve(void order.push('workers')),
+        () => Promise.resolve(void order.push('queues')),
+        () => Promise.resolve(void order.push('redis')),
+      ],
+      exit,
+    });
+
+    await shutdown('SIGTERM');
+
+    expect(order).toEqual(['workers', 'queues', 'redis']);
+    expect(exit).toHaveBeenCalledWith(0);
+  });
 });

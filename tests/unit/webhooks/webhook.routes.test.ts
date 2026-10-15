@@ -16,6 +16,7 @@ function setup(
   process = vi
     .fn()
     .mockResolvedValue({ webhookEventId: 'w1', status: 'PROCESSED', skipped: false }),
+  add = vi.fn().mockResolvedValue({ id: 'w1' }),
 ) {
   const app = express();
   app.use(createRequestLogger(createLogger({ level: 'silent', pretty: false })));
@@ -23,6 +24,7 @@ function setup(
     '/webhooks',
     createWebhookRouter({
       webhooks: { receive } as unknown as WebhookService,
+      queue: { add },
       processor: { process } as unknown as WebhookProcessor,
     }),
   );
@@ -109,32 +111,60 @@ describe('webhooks router', () => {
     expect((res.body as ApiErrorBody).error.code).toBe('INVALID_WEBHOOK_SIGNATURE');
   });
 
-  it('processes accepted events and redeliveries, never ignored ones', async () => {
-    for (const [status, processed] of [
+  it('queues accepted events and redeliveries (job ID = event ID), never ignored ones', async () => {
+    for (const [status, queued] of [
       ['ACCEPTED', true],
       ['DUPLICATE', true],
       ['IGNORED', false],
     ] as const) {
       const receive = vi.fn().mockResolvedValue({ ...accepted, status });
-      const process = vi
-        .fn()
-        .mockResolvedValue({ webhookEventId: 'w1', status: 'PROCESSED', skipped: false });
-      await request(setup(receive, process)).post('/webhooks/payments').send('{"a":1}');
-      expect(process.mock.calls.length, status).toBe(processed ? 1 : 0);
+      const process = vi.fn();
+      const add = vi.fn().mockResolvedValue({ id: 'w1' });
+      await request(setup(receive, process, add))
+        .post('/webhooks/payments')
+        .send('{"a":1}');
+      expect(add.mock.calls.length, status).toBe(queued ? 1 : 0);
+      if (queued) {
+        expect(add).toHaveBeenCalledWith(
+          'process-webhook',
+          { webhookEventId: 'w1' },
+          { jobId: 'w1' },
+        );
+      }
+      expect(process, status).not.toHaveBeenCalled();
     }
   });
 
-  it('answers 200 even when processing failed: the event is stored and will be retried', async () => {
+  it('processes inline when the queue refuses the job (Redis down)', async () => {
+    const receive = vi.fn().mockResolvedValue(accepted);
+    const process = vi
+      .fn()
+      .mockResolvedValue({ webhookEventId: 'w1', status: 'PROCESSED', skipped: false });
+    const add = vi.fn().mockRejectedValue(new Error('Connection is closed.'));
+    const res = await request(setup(receive, process, add))
+      .post('/webhooks/payments')
+      .send('{"a":1}');
+
+    expect(res.status).toBe(200);
+    expect(process).toHaveBeenCalledWith('w1');
+  });
+
+  it('processes inline when the queue does not answer within 2 s', async () => {
     const receive = vi.fn().mockResolvedValue(accepted);
     const process = vi.fn().mockResolvedValue({
       webhookEventId: 'w1',
       status: 'FAILED',
       skipped: false,
-      lastError: 'boom',
+      lastError: 'x',
     });
-    const res = await request(setup(receive, process)).post('/webhooks/payments').send('{"a":1}');
+    const add = vi.fn().mockReturnValue(new Promise(() => undefined));
+    const started = Date.now();
+    const res = await request(setup(receive, process, add))
+      .post('/webhooks/payments')
+      .send('{"a":1}');
 
     expect(res.status).toBe(200);
     expect(process).toHaveBeenCalledWith('w1');
+    expect(Date.now() - started).toBeGreaterThanOrEqual(1_900);
   });
 });

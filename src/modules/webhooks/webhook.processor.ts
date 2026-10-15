@@ -2,9 +2,10 @@
 // hands it to the payments module (docs/ARCHITECTURE.md §8.6). Safe to run any number of
 // times for the same event: the payment services lock the transaction row and answer
 // ALREADY_APPLIED to news they already applied.
+import { IdempotencyService } from '../../common/idempotency/idempotency.service.ts';
 import type { PrismaClient, WebhookStatus } from '../../generated/prisma/client.ts';
-import type { DepositService } from '../payments/deposit.service.ts';
-import type { OutboundPaymentService } from '../payments/outbound-payment.service.ts';
+import { DepositService } from '../payments/deposit.service.ts';
+import { OutboundPaymentService } from '../payments/outbound-payment.service.ts';
 import type { PaymentEventOutcome } from '../payments/payment-review.ts';
 import type { PaymentProvider } from '../payments/providers/payment-provider.ts';
 import type { ProcessedWebhook } from './webhook.types.ts';
@@ -131,4 +132,18 @@ export class WebhookProcessor {
 
 function errorMessage(err: unknown): string {
   return (err instanceof Error ? err.message : String(err)).slice(0, 500);
+}
+
+/** The processor with its payment services, as the API and the worker both build it. */
+export function createWebhookProcessor(
+  db: PrismaClient,
+  provider: PaymentProvider,
+): WebhookProcessor {
+  const idempotency = new IdempotencyService(db);
+  return new WebhookProcessor(
+    db,
+    provider,
+    new DepositService(db, provider, idempotency),
+    new OutboundPaymentService(db, provider, idempotency),
+  );
 }

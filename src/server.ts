@@ -5,7 +5,14 @@ import { registerShutdown } from './common/utils/shutdown.ts';
 import { checkDatabase, disconnectDatabase, prisma } from './config/database.ts';
 import { env } from './config/env.ts';
 import { logger } from './config/logger.ts';
-import { checkRedis, connectRedis, disconnectRedis, redis } from './config/redis.ts';
+import {
+  checkRedis,
+  connectRedis,
+  createQueueConnection,
+  disconnectRedis,
+  redis,
+} from './config/redis.ts';
+import { createQueues } from './jobs/queues.ts';
 import { RedisRateLimitStore } from './middleware/rate-limit.middleware.ts';
 import { RedisOtpStore } from './modules/auth/otp.ts';
 import { LocalDocumentStorage } from './modules/kyc/document-storage.ts';
@@ -26,6 +33,10 @@ const health = new HealthService([
 // Connects in the background; until Redis is reachable the rate limiter fails open.
 connectRedis();
 
+// The API only adds jobs; the worker process (`npm run start:worker`) runs them.
+const queueConnection = createQueueConnection(env.REDIS_URL);
+const queues = createQueues(queueConnection);
+
 const server = createServer(
   createApp({
     db: prisma,
@@ -39,6 +50,7 @@ const server = createServer(
     documentStorage: new LocalDocumentStorage(env.KYC_STORAGE_DIR),
     // PAYMENT_PROVIDER has one value today; a sandbox adapter becomes a second branch here.
     paymentProvider: new MockPaymentProvider({ webhookSecret: env.PAYMENT_WEBHOOK_SECRET }),
+    webhookQueue: queues.webhooks,
   }),
 );
 
@@ -72,5 +84,11 @@ registerShutdown({
     health.startDraining();
   },
   // Runs after HTTP has drained, so no in-flight request loses its connection mid-query.
-  cleanup: [() => disconnectRedis(), () => disconnectDatabase()],
+  // Queues first: they use the queue connection, which closes next, then Redis, then the database.
+  cleanup: [
+    () => queues.close(),
+    () => disconnectRedis(queueConnection),
+    () => disconnectRedis(),
+    () => disconnectDatabase(),
+  ],
 });

@@ -691,7 +691,7 @@ Three deliberate code breaks were each caught: the signature check skipped, a du
 |---|---|
 | Dispatch | The normalized event is rebuilt from the stored payload (the provider's parser ignores jsonb's key order) and routed: `DEPOSIT` → `DepositService.applyEvent`; `PAYOUT` / `BILL` → `OutboundPaymentService.applyEvent`; `REFUND` → `applyRefund` |
 | Recorded on the event | `COMPLETED` / `FAILED` / `ALREADY_APPLIED` → `PROCESSED` with the transaction linked and `processed_at`. Held for review → `PROCESSED` too (a person owns it now), with `last_error` = `Held for review: <reason>`. `UNMATCHED` or an exception → `FAILED` with the reason, to be tried again (maybe our side hadn't committed yet). Every run counts an attempt; after 10 the event is left for a person |
-| When | **Inline**, right after the event is stored and before the `200`: one short transaction. A redelivery of an event that isn't `PROCESSED` yet (the provider retrying) processes it again, so the provider's retries are ours too. The answer is `200` whatever processing did: the event is stored, and retrying is now Fundra's job. `processPending()` sweeps `RECEIVED` and `FAILED` events (oldest first); the `process-webhook` job runs it from Stage 16, when processing also moves off the request |
+| When | **In the worker** (Stage 16): once stored, the event is queued as `process-webhook` with **job ID = event ID**, and the `200` goes back at once. A job whose event ends `FAILED` throws, so BullMQ retries it with backoff. If the queue refuses the job or doesn't answer within 2 s (Redis down), the event is processed **inline** before the `200`, so payments keep flowing through a Redis outage. A scheduled sweep (`processPending()`, every 30 s) is the net for anything stored but never queued or still `FAILED`. The answer is `200` whatever happens next: the event is stored, and retrying is now Fundra's job |
 | Safety | Running it twice for the same news is harmless: the payment services lock the transaction row and answer `ALREADY_APPLIED`. A processed event is skipped without touching anything |
 
 Verified on PostgreSQL 18.3, from signed HTTP delivery to the ledger, with 15 checks covering:
@@ -708,7 +708,7 @@ Three deliberate code breaks were each caught: refunds misrouted, the "already p
 
 ---
 
-## 9. Asynchronous processing — *Designed*
+## 9. Asynchronous processing — *Partly built (queues, worker)*
 
 ### 9.1 Transactional outbox
 
@@ -736,6 +736,31 @@ The relay that publishes events to BullMQ is Stage 16.
 | `maintenance` | `outbox-relay`, `expire-otp`, `reconcile-transactions`, `generate-statement` |
 
 Jobs retry a bounded number of times with exponential backoff. Jobs that keep failing stay in BullMQ's failed set for inspection.
+
+**Built (Stage 16)** ([src/jobs](../src/jobs/)):
+
+| Concern | Design |
+|---|---|
+| Queues | `createQueues(connection)` makes the three queues above. Job options: 5 attempts, exponential backoff from 1 s; completed jobs kept 24 h (so a repeated job ID is still deduplicated), failed ones 7 days |
+| Connection | `createQueueConnection()`: its own ioredis client, tuned the opposite way to the request-path client. `maxRetriesPerRequest: null` (BullMQ's blocking reads need it), and the protocol **pinned to RESP2**: ioredis 6 defaults to RESP3, and pinning removes the compatibility question rather than relying on ioredis's RESP2-shaped "legacy" replies |
+| Worker process | `src/jobs/workers.ts` (`npm run start:worker`): one BullMQ `Worker` per queue (concurrency: notifications 10, webhooks 5, maintenance 1), dispatching by job name. A job with no handler throws `UnrecoverableError`: it fails at once instead of retrying something that can never work |
+| Recurring jobs | Upserted at every worker start (`upsertJobScheduler`), so a restart never duplicates them: the webhook sweep every 30 s. More arrive with items 2 and 3 |
+| Shutdown | API: queues close **first** (they use the queue connection), then that connection, then Redis, then the database. Worker: workers first (`close()` waits for running jobs to finish), then queues, Redis, the database |
+
+Verified with **real BullMQ** (queues, workers, the scheduler) on BullMQ 6's PostgreSQL backend over PGlite, because Redis isn't installed yet. 12 checks covering:
+- a webhook answered and handed to the worker (job ID = event ID), processed into the ledger, the job completed;
+- a redelivery not queued twice;
+- the queue refusing (processed inline);
+- the sweep scheduled once despite restarts, and picking up a never-queued event;
+- an unappliable event failing its job with a scheduled exponential retry;
+- a job with no handler failing for good at once;
+- closing workers waiting for a running job to finish.
+
+Three deliberate code breaks were each caught: the webhook never queued, a processing failure swallowed (no retry), and a missing handler made retryable.
+
+**Not yet verified against a real Redis server**, which is the same dependency as the Stage 6 integration suite. PGlite needed two test-side concessions:
+- BullMQ runs on its own PGlite server, with Fundra's client on one connection, because concurrent connections interleave on PGlite's single session;
+- workers find new jobs on a poll of a few seconds, because PGlite doesn't relay `LISTEN/NOTIFY`, where Redis wakes them at once.
 
 ### 9.3 PostgreSQL vs Redis
 
@@ -887,14 +912,14 @@ This reflects the repository as it stands, not the design.
 | Redis is a *non-critical* readiness check | Deliberate (re-decided in Stage 7): during a Redis outage, readiness says `degraded` while OTP flows return 503. Revisit for job queues (Stage 16) |
 | Verification and reset codes aren't delivered yet | `MemoryMessageSender` holds them in memory until Stage 17 adds real email/SMS; the server logs a warning at startup. Tests read codes from the memory sender |
 | Rate limiting hasn't run against a real Redis server | The Lua script was verified on ioredis-mock's Lua engine; real Redis 8.8 waits for Docker and the Stage 6 integration tests |
-| ioredis 6 defaults to the RESP3 protocol | Fine for our commands on Redis 8. BullMQ's compatibility with ioredis 6 / RESP3 must be checked in Stage 16 |
+| BullMQ hasn't run against a real Redis server | Its connection is pinned to RESP2 (ioredis 6 defaults to RESP3), and the job code was verified with real BullMQ on its PostgreSQL backend. Running the worker on Redis 8 waits for Redis to be installed (Docker; Stage 6) |
 | Graceful shutdown → `disconnectDatabase()` hasn't been exercised end-to-end | Windows can't deliver SIGTERM to a Node process. The cleanup hook ordering is unit-tested; a real SIGTERM test runs once the app is in Docker (Stage 23) |
 | The init migration has only been run on PGlite (in-process PostgreSQL 18.3), not on the Docker database, and `prisma migrate` drift detection hasn't run (it needs a shadow database) | Low risk, same engine version, but `npm run db:migrate` against Docker is still the real test |
 | The 49 migration checks (30 constraints + 19 triggers) live in throwaway scripts | They need porting to `tests/integration` with Testcontainers (Stage 6) to keep guarding future migrations |
 | Ledger triggers can be disabled by a database superuser | They protect against application bugs, not a compromised DBA account. The app must run as a non-owner role (Stage 25) |
 | A native PostgreSQL 16 Windows service (`postgresql-x64-16`) occupies port 5432 on the development machine, listening on all interfaces | Fundra's Docker database uses **5433** instead. That service is outside this project, but it's reachable from the local network |
 | Prisma 7.10's query engine sends overlapping queries on one interactive transaction's connection (e.g. loading `include`d relations); `pg` 8 logs a deprecation warning and **`pg` 9 will reject it** | Found in Stage 13 by `--trace-deprecation`: the stack is inside Prisma, not Fundra (Fundra's own in-transaction `Promise.all`s were made sequential). Don't upgrade `pg` to 9 until Prisma serialises in-transaction queries |
-| Webhooks are processed inline on the request, and nothing sweeps `FAILED` ones on a schedule yet | A provider redelivery retries them; the `process-webhook` job (Stage 16) runs `processPending()` and takes processing off the request |
+| The mock payment provider keeps its state in memory per process | The worker only uses its stateless parts (webhook parsing). A real provider holds that state itself |
 | "At once" webhook checks run one after another on PGlite | PGlite's socket server mis-routes responses when concurrent statements fail (a test-server limit, probed). Simultaneous identical deliveries need real PostgreSQL (Docker): same deferral as the Stage 11 parallel-debit test. The unique index and the row locks are what make them safe |
 | Withdrawals whose payout couldn't be sent stay held until `dispatch()` runs again | The money is safe (held, not lost), but nothing retries it automatically until the background jobs (Stage 16) |
 | Deposits held for review, and abandoned checkouts, stay `PROCESSING` | Resolving held deposits is an admin action (Stage 19). Expiring abandoned ones (ask `getPaymentStatus`, then fail them) belongs to the `reconcile-transactions` job |

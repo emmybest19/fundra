@@ -2,7 +2,8 @@ import type { Server } from 'node:http';
 import type { Logger } from 'pino';
 
 export interface ShutdownOptions {
-  server: Server;
+  /** The HTTP server to drain first. The worker process has none. */
+  server?: Server;
   logger: Logger;
   /** How long in-flight requests get to finish before connections are force-closed. */
   timeoutMs?: number;
@@ -53,7 +54,7 @@ export function createShutdown({
     const drainDeadline = setTimeout(() => {
       logger.error({ timeoutMs }, 'in-flight requests did not finish in time; closing connections');
       code = 1;
-      server.closeAllConnections();
+      server?.closeAllConnections();
     }, timeoutMs);
     const hardExit = setTimeout(() => {
       logger.fatal('shutdown hung; exiting');
@@ -62,7 +63,7 @@ export function createShutdown({
     drainDeadline.unref();
     hardExit.unref();
 
-    await closeServer(server);
+    if (server !== undefined) await closeServer(server);
     clearTimeout(drainDeadline);
 
     for (const step of cleanup) {

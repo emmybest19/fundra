@@ -101,7 +101,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] `process-webhook` dispatch to payments: stored payload → deposits / payouts / bills / refunds; outcome recorded on the event (PROCESSED, review noted, FAILED + attempts for retry); inline until Stage 16, `processPending()` ready for the job; 15 end-to-end checks on PostgreSQL 18.3
 
 ### Stage 16 — Background jobs
-- [ ] Queues + worker process (`jobs/workers.ts`); confirm BullMQ works with ioredis 6 (RESP3 default); close queues first in shutdown cleanup
+- [x] Queues + worker process (`jobs/workers.ts`); close queues first in shutdown cleanup; webhooks handed to the worker (job ID = event ID, inline fallback, 30 s sweep); queue connection pinned to RESP2; 12 checks with real BullMQ on its PostgreSQL backend (PGlite). **Deferred:** confirming BullMQ on a real Redis 8 server (needs Redis installed)
 - [ ] Outbox relay (`SELECT … FOR UPDATE SKIP LOCKED` batches, job ID = event ID, increment `attempts`, mark `published_at`)
 - [ ] `expire-otp`
 
