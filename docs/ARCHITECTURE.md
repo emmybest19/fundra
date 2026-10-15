@@ -725,7 +725,23 @@ Delivery is therefore **at-least-once**, so every handler is idempotent and keye
 - **Fails before COMMIT:** a non-JSON-safe or over-16 KB payload throws, so the business action rolls back rather than committing without its event.
 - **Verified on PostgreSQL 18.3 via Prisma:** committed with its transaction; absent after a rollback (no phantom notification); and an idempotent retry replayed **without a second event**.
 
-The relay that publishes events to BullMQ is Stage 16.
+**Relay (*Built*, Stage 16)** ([outbox.relay.ts](../src/common/outbox/outbox.relay.ts)), the `outbox-relay` job every second on the maintenance queue. Each run is one transaction:
+- **Claim:** the oldest unpublished events (up to 100), `FOR UPDATE SKIP LOCKED`, so a second relay running at the same time takes other rows instead of waiting. Count an attempt on each.
+- **Publish:** queue each as `send-notification` on the notifications queue, **job ID = event ID**.
+- **Mark:** set `published_at` only on the events the queue accepted. A failed one waits for the next run, and one failure doesn't hold back the rest of the batch.
+
+A crash between queueing and COMMIT leaves an event unpublished, so it is queued again under the same job ID, which BullMQ deduplicates (completed jobs are kept 24 h). Consumers still dedupe by event ID, since delivery is at-least-once. Until notifications exist (Stage 17), `send-notification` jobs are acknowledged with a debug log rather than left to fail.
+
+Verified with real BullMQ (PostgreSQL backend, PGlite) in 11 checks covering:
+- publish with job ID = event ID, and never twice;
+- batches oldest first;
+- the queue refusing, then recovering;
+- one failure inside a batch;
+- a lost COMMIT re-queued as the same single job;
+- a rolled-back transaction's event never existing;
+- the scheduled relay publishing, and the worker consuming, a new event.
+
+Three deliberate code breaks were each caught: failures marked published, no job ID, and newest first.
 
 ### 9.2 Queues
 
@@ -744,7 +760,7 @@ Jobs retry a bounded number of times with exponential backoff. Jobs that keep fa
 | Queues | `createQueues(connection)` makes the three queues above. Job options: 5 attempts, exponential backoff from 1 s; completed jobs kept 24 h (so a repeated job ID is still deduplicated), failed ones 7 days |
 | Connection | `createQueueConnection()`: its own ioredis client, tuned the opposite way to the request-path client. `maxRetriesPerRequest: null` (BullMQ's blocking reads need it), and the protocol **pinned to RESP2**: ioredis 6 defaults to RESP3, and pinning removes the compatibility question rather than relying on ioredis's RESP2-shaped "legacy" replies |
 | Worker process | `src/jobs/workers.ts` (`npm run start:worker`): one BullMQ `Worker` per queue (concurrency: notifications 10, webhooks 5, maintenance 1), dispatching by job name. A job with no handler throws `UnrecoverableError`: it fails at once instead of retrying something that can never work |
-| Recurring jobs | Upserted at every worker start (`upsertJobScheduler`), so a restart never duplicates them: the webhook sweep every 30 s. More arrive with items 2 and 3 |
+| Recurring jobs | Upserted at every worker start (`upsertJobScheduler`), so a restart never duplicates them: the webhook sweep every 30 s, the outbox relay every second |
 | Shutdown | API: queues close **first** (they use the queue connection), then that connection, then Redis, then the database. Worker: workers first (`close()` waits for running jobs to finish), then queues, Redis, the database |
 
 Verified with **real BullMQ** (queues, workers, the scheduler) on BullMQ 6's PostgreSQL backend over PGlite, because Redis isn't installed yet. 12 checks covering:

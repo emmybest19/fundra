@@ -2,6 +2,7 @@
 // API hands off (process-webhook) and the recurring maintenance (docs/ARCHITECTURE.md §9.2).
 import { UnrecoverableError, Worker, type ConnectionOptions, type Job } from 'bullmq';
 import type { Logger } from 'pino';
+import { OutboxRelay, type OutboxJobData } from '../common/outbox/outbox.relay.ts';
 import { registerShutdown } from '../common/utils/shutdown.ts';
 import { disconnectDatabase, prisma } from '../config/database.ts';
 import { env } from '../config/env.ts';
@@ -26,6 +27,9 @@ export type JobHandlers = Partial<Record<JobName, JobHandler>>;
 /** How often the webhook sweep picks up events that weren't (or couldn't be) processed. */
 export const WEBHOOK_SWEEP_EVERY_MS = 30_000;
 
+/** How often committed outbox events are published: the lag before a notification starts. */
+export const OUTBOX_RELAY_EVERY_MS = 1_000;
+
 /** Jobs run at most this many at a time per queue; maintenance runs one at a time. */
 const CONCURRENCY: Readonly<Record<QueueName, number>> = {
   notifications: 10,
@@ -36,17 +40,32 @@ const CONCURRENCY: Readonly<Record<QueueName, number>> = {
 export function createJobHandlers(deps: {
   db: PrismaClient;
   provider: PaymentProvider;
+  queues: Pick<JobQueues, 'notifications'>;
+  logger: Logger;
 }): JobHandlers {
   const webhooks = createWebhookProcessor(deps.db, deps.provider);
+  const outbox = new OutboxRelay(deps.db, deps.queues.notifications);
   return {
     'process-webhook': async (job) => {
       const { webhookEventId } = job.data as ProcessWebhookData;
       if (webhookEventId === undefined) return webhooks.processPending();
       const result = await webhooks.process(webhookEventId);
       // Throwing hands the retry to BullMQ's backoff; the event row counts attempts too.
-      if (result.status === 'FAILED')
+      if (result.status === 'FAILED') {
         throw new Error(result.lastError ?? 'Webhook processing failed');
+      }
       return result;
+    },
+    'outbox-relay': () => outbox.relay(),
+    // Stage 17 replaces this with real notifications. Until then the published events are
+    // acknowledged here, so they don't pile up as failed jobs.
+    'send-notification': (job) => {
+      const { outboxEventId, eventType } = job.data as OutboxJobData;
+      deps.logger.debug(
+        { outboxEventId, eventType },
+        'notification not sent: notifications arrive in Stage 17',
+      );
+      return Promise.resolve({ sent: false });
     },
   };
 }
@@ -100,6 +119,11 @@ export async function scheduleRecurringJobs(queues: JobQueues): Promise<void> {
     { every: WEBHOOK_SWEEP_EVERY_MS },
     { name: 'process-webhook', data: {} satisfies ProcessWebhookData },
   );
+  await queues.maintenance.upsertJobScheduler(
+    'outbox-relay',
+    { every: OUTBOX_RELAY_EVERY_MS },
+    { name: 'outbox-relay', data: {} },
+  );
 }
 
 if (import.meta.main) {
@@ -109,7 +133,7 @@ if (import.meta.main) {
   const provider = new MockPaymentProvider({ webhookSecret: env.PAYMENT_WEBHOOK_SECRET });
   const running = startWorkers({
     connection,
-    handlers: createJobHandlers({ db: prisma, provider }),
+    handlers: createJobHandlers({ db: prisma, provider, queues, logger }),
     logger,
   });
   await scheduleRecurringJobs(queues);

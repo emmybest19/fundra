@@ -102,7 +102,7 @@ Legend: `[x]` done · `[ ]` to do
 
 ### Stage 16 — Background jobs
 - [x] Queues + worker process (`jobs/workers.ts`); close queues first in shutdown cleanup; webhooks handed to the worker (job ID = event ID, inline fallback, 30 s sweep); queue connection pinned to RESP2; 12 checks with real BullMQ on its PostgreSQL backend (PGlite). **Deferred:** confirming BullMQ on a real Redis 8 server (needs Redis installed)
-- [ ] Outbox relay (`SELECT … FOR UPDATE SKIP LOCKED` batches, job ID = event ID, increment `attempts`, mark `published_at`)
+- [x] Outbox relay (`SELECT … FOR UPDATE SKIP LOCKED` batches, job ID = event ID, increment `attempts`, mark `published_at`): every second; failures wait for the next run without holding back the batch; a lost COMMIT re-queues as the same job; 11 checks with real BullMQ
 - [ ] `expire-otp`
 
 ### Stage 17 — Notifications
