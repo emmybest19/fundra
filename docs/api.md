@@ -97,6 +97,7 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 409 | `TRANSACTION_NOT_REVERSIBLE` | (Admin) Only a completed transfer can be reversed, and only once |
 | 403 | `TRANSACTION_SELF_ACTION` | (Admin) You can't reverse a transaction involving your own wallet |
 | 404 | `BANK_ACCOUNT_NOT_FOUND` | The bank has no account with that bank code and number (withdrawals) |
+| 404 | `BILLER_NOT_FOUND` | No biller has that code (bill payments) |
 | 409 | `KYC_TIER_ORDER` | Tiers are taken in order; complete the previous tier first |
 | 409 | `KYC_TIER_ALREADY_APPROVED` | You're already verified at this tier or higher |
 | 409 | `KYC_UNDER_REVIEW` | A Tier 3 submission is being reviewed; documents and address can't change until it's decided |
@@ -595,7 +596,7 @@ Retrying with the same key replays this response (`Idempotent-Replayed: true`) a
 
 ### Payments (money in and out)
 
-Deposits and withdrawals now; payments follow. They go through a payment provider (the mock today). Amounts are kobo strings (D1). Every route needs a verified account and a wallet, and responses are never cached.
+Deposits, withdrawals and bill payments. They go through a payment provider (the mock today). Amounts are kobo strings (D1). Every route needs a verified account and a wallet, and responses are never cached.
 
 #### `POST /api/v1/payments/deposits` (idempotent)
 
@@ -665,6 +666,36 @@ The payout is sent after this point. It ends `COMPLETED` (the hold becomes the r
 | `422 WALLET_FROZEN` / `WALLET_CLOSED` | Your wallet is restricted or closed |
 | `422 IDEMPOTENCY_KEY_REUSED` | The key was used for a different request |
 | `503 SERVICE_UNAVAILABLE` | The provider can't be reached for the name check. Nothing was taken; retry with the same key |
+
+#### `GET /api/v1/payments/billers`
+
+What can be paid, from the provider:
+
+```json
+{ "data": { "billers": [{ "code": "DSTV", "name": "DStv", "category": "TV", "customerReferenceLabel": "Smartcard number", "customerReferencePattern": "^\\d{10,11}$" }] } }
+```
+
+#### `POST /api/v1/payments/bills` (idempotent)
+
+```json
+{ "billerCode": "DSTV", "customerReference": "1234567890", "amount": "150000", "currency": "NGN" }
+```
+
+- `customerReference` is the phone, smartcard or meter number, and must match the biller's `customerReferencePattern`. `description` is optional (at most 100 characters). No fee today.
+- Rate limit: 10 per minute.
+
+**201** once the money is held, like a withdrawal: `{ "data": { "payment": { …, "type": "PAYMENT", "status": "PROCESSING" }, "destination": { "billerCode": "DSTV", "billerName": "DStv", "customerReference": "1234567890" } } }`. It ends `COMPLETED` when the biller confirms, or `FAILED` with the hold released.
+
+If the biller later gives money back (in full or in part), it arrives as a separate `REFUND` transaction in your history; the payment itself stays `COMPLETED`.
+
+| Error | When |
+|---|---|
+| `400 IDEMPOTENCY_KEY_REQUIRED` | No `Idempotency-Key` header |
+| `403 KYC_REQUIRED` | You don't have a wallet yet: complete KYC Tier 1 |
+| `404 BILLER_NOT_FOUND` | No biller has that code |
+| `422 VALIDATION_ERROR` | The customer reference doesn't fit the biller (the message names what's expected) |
+| `422 INSUFFICIENT_FUNDS` / `LIMIT_*` / `WALLET_FROZEN` / `WALLET_CLOSED` | As for withdrawals |
+| `503 SERVICE_UNAVAILABLE` | The provider can't be reached for the catalogue. Nothing was taken; retry with the same key |
 
 ### Transactions (your history)
 

@@ -53,6 +53,26 @@ export type PayoutResult =
   | { providerReference: string; status: 'PENDING' }
   | { providerReference: string; status: 'FAILED'; reason: string };
 
+/** Someone Fundra users can pay through the provider: an airtime network, TV, electricity. */
+export interface Biller {
+  code: string;
+  name: string;
+  category: 'AIRTIME' | 'DATA' | 'TV' | 'ELECTRICITY';
+  /** What the customer types, e.g. "Phone number", "Smartcard number", "Meter number". */
+  customerReferenceLabel: string;
+  /** A regular expression the customer reference must match, checked before paying. */
+  customerReferencePattern: string;
+}
+
+export interface BillPaymentRequest {
+  reference: string;
+  amount: bigint;
+  currency: Currency;
+  billerCode: string;
+  /** The phone, smartcard or meter number being paid for. */
+  customerReference: string;
+}
+
 /** The provider's view of a payment, for reconciliation when a webhook never arrives. */
 export interface ProviderPaymentStatus {
   providerReference: string;
@@ -70,7 +90,7 @@ export interface ProviderPaymentStatus {
  */
 export type ProviderEvent =
   | {
-      kind: 'DEPOSIT' | 'PAYOUT';
+      kind: 'DEPOSIT' | 'PAYOUT' | 'BILL';
       outcome: 'SUCCEEDED' | 'FAILED';
       /** The provider's event ID: the deduplication key. */
       eventId: string;
@@ -78,6 +98,22 @@ export type ProviderEvent =
       eventType: string;
       providerReference: string;
       reference: string;
+      amount: bigint;
+      currency: Currency;
+      reason?: string;
+    }
+  /**
+   * Money given back for a completed bill payment, in full or in part. `refundReference` is
+   * the provider's ID for this refund: the same refund reported twice is credited once.
+   */
+  | {
+      kind: 'REFUND';
+      eventId: string;
+      eventType: string;
+      /** The original payment's provider reference and Fundra reference. */
+      providerReference: string;
+      reference: string;
+      refundReference: string;
       amount: bigint;
       currency: Currency;
       reason?: string;
@@ -90,6 +126,9 @@ export interface PaymentProvider {
   /** `null` when the bank has no such account. */
   resolveBankAccount(account: BankAccount): Promise<ResolvedBankAccount | null>;
   sendPayout(request: PayoutRequest): Promise<PayoutResult>;
+  listBillers(): Promise<readonly Biller[]>;
+  /** Asynchronous like a payout: PENDING until the webhook, or FAILED on the spot. */
+  payBill(request: BillPaymentRequest): Promise<PayoutResult>;
   /** `null` for a reference the provider never issued. */
   getPaymentStatus(providerReference: string): Promise<ProviderPaymentStatus | null>;
   /** Checks the signature over the exact bytes received, in constant time. */

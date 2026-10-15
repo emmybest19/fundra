@@ -33,3 +33,20 @@ export const createWithdrawalBody = z.strictObject({
 });
 
 export type CreateWithdrawalInput = z.output<typeof createWithdrawalBody>;
+
+/** A bill payment: the biller's code (GET /payments/billers) and what's being paid for. */
+export const createBillPaymentBody = z.strictObject({
+  billerCode: z
+    .string()
+    .trim()
+    .regex(/^[A-Z0-9_]{2,40}$/, 'Must be a biller code from GET /payments/billers'),
+  customerReference: z
+    .string()
+    .trim()
+    .regex(/^[0-9A-Za-z-]{4,30}$/, 'Must be 4–30 letters, digits or dashes'),
+  amount,
+  currency,
+  description: z.string().trim().max(100, 'Must be at most 100 characters').optional(),
+});
+
+export type CreateBillPaymentInput = z.output<typeof createBillPaymentBody>;

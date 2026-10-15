@@ -9,14 +9,15 @@ import { createRequestLogger } from '../../../src/middleware/request-logger.midd
 import type { DepositService } from '../../../src/modules/payments/deposit.service.ts';
 import {
   bankAccountQuery,
+  createBillPaymentBody,
   createDepositBody,
   createWithdrawalBody,
 } from '../../../src/modules/payments/payment.schema.ts';
 import { createPaymentRouter } from '../../../src/modules/payments/payment.routes.ts';
 import {
   maskAccountNumber,
-  type WithdrawalService,
-} from '../../../src/modules/payments/withdrawal.service.ts';
+  type OutboundPaymentService,
+} from '../../../src/modules/payments/outbound-payment.service.ts';
 
 describe('createDepositBody', () => {
   it('takes a positive kobo string and a currency', () => {
@@ -68,6 +69,29 @@ describe('createWithdrawalBody and bankAccountQuery', () => {
   });
 });
 
+describe('createBillPaymentBody', () => {
+  const base = {
+    billerCode: 'DSTV',
+    customerReference: '1234567890',
+    amount: '150000',
+    currency: 'NGN',
+  };
+
+  it('takes a biller code, a customer reference and the amount', () => {
+    expect(createBillPaymentBody.parse(base)).toEqual({ ...base, amount: 150_000n });
+  });
+
+  it.each([
+    ['a lower-case biller code', { billerCode: 'dstv' }],
+    ['a customer reference with spaces', { customerReference: '1234 5678' }],
+    ['a too-short customer reference', { customerReference: '123' }],
+    ['a zero amount', { amount: '0' }],
+    ['a fee from the client', { fee: '0' }],
+  ])('refuses %s', (_label, change) => {
+    expect(createBillPaymentBody.safeParse({ ...base, ...change }).success).toBe(false);
+  });
+});
+
 describe('maskAccountNumber', () => {
   it('shows only the last four digits', () => {
     expect(maskAccountNumber('0123456789')).toBe('******6789');
@@ -96,12 +120,18 @@ describe('payments router', () => {
       }),
     };
     const app = express();
-    const withdrawals = {
-      create: vi.fn().mockResolvedValue({
+    const outbound = {
+      withdraw: vi.fn().mockResolvedValue({
         status: 201,
         body: { data: { withdrawal: { id: 'w' } } },
         replayed: false,
       }),
+      payBill: vi.fn().mockResolvedValue({
+        status: 201,
+        body: { data: { payment: { id: 'p' } } },
+        replayed: false,
+      }),
+      listBillers: vi.fn().mockResolvedValue([{ code: 'DSTV', name: 'DStv' }]),
       resolveBankAccount: vi.fn().mockResolvedValue({
         bankCode: '058',
         accountNumber: '0123456789',
@@ -114,13 +144,13 @@ describe('payments router', () => {
       '/payments',
       createPaymentRouter({
         deposits: deposits as unknown as DepositService,
-        withdrawals: withdrawals as unknown as WithdrawalService,
+        outbound: outbound as unknown as OutboundPaymentService,
         authenticate: fakeAuthenticate,
         rateLimitStore: new MemoryRateLimitStore(),
       }),
     );
     app.use(errorHandler);
-    return { app, deposits, withdrawals };
+    return { app, deposits, outbound };
   }
   const body = { amount: '500000', currency: 'NGN' };
 
@@ -184,7 +214,7 @@ describe('payments router', () => {
   });
 
   it('withdraws with an Idempotency-Key, passing the parsed body', async () => {
-    const { app, withdrawals } = setup();
+    const { app, outbound } = setup();
     const send = () =>
       request(app)
         .post('/payments/withdrawals')
@@ -192,11 +222,11 @@ describe('payments router', () => {
         .send({ bankCode: '058', accountNumber: '0123456789', amount: '250000', currency: 'NGN' });
 
     expect((await send()).status).toBe(400);
-    expect(withdrawals.create).not.toHaveBeenCalled();
+    expect(outbound.withdraw).not.toHaveBeenCalled();
     const res = await send().set('Idempotency-Key', 'key-12345678');
     expect(res.status).toBe(201);
     expect(res.headers['cache-control']).toBe('no-store');
-    expect(withdrawals.create).toHaveBeenCalledWith(
+    expect(outbound.withdraw).toHaveBeenCalledWith(
       'u',
       { bankCode: '058', accountNumber: '0123456789', amount: 250_000n, currency: 'NGN' },
       expect.objectContaining({ key: 'key-12345678' }),
@@ -218,5 +248,27 @@ describe('payments router', () => {
     });
     for (let i = 1; i < 30; i++) await ask();
     expect((await ask()).status).toBe(429);
+  });
+
+  it('lists billers, and pays a bill with an Idempotency-Key', async () => {
+    const { app, outbound } = setup();
+    const billers = await request(app).get('/payments/billers').set('X-Test-User', 'u');
+    expect(billers.body).toEqual({ data: { billers: [{ code: 'DSTV', name: 'DStv' }] } });
+
+    const body = {
+      billerCode: 'DSTV',
+      customerReference: '1234567890',
+      amount: '150000',
+      currency: 'NGN',
+    };
+    const noKey = await request(app).post('/payments/bills').set('X-Test-User', 'u').send(body);
+    expect(noKey.status).toBe(400);
+    const res = await request(app)
+      .post('/payments/bills')
+      .set('X-Test-User', 'u')
+      .set('Idempotency-Key', 'key-12345678')
+      .send(body);
+    expect(res.status).toBe(201);
+    expect(outbound.payBill).toHaveBeenCalledTimes(1);
   });
 });

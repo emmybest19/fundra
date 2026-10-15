@@ -6,7 +6,10 @@ import type { ProviderEvent } from './providers/payment-provider.ts';
 
 type Tx = Prisma.TransactionClient;
 
-export type PaymentEvent = Extract<ProviderEvent, { kind: 'DEPOSIT' | 'PAYOUT' }>;
+/** A payment succeeded or failed (deposits, payouts, bill payments). */
+export type PaymentEvent = Exclude<ProviderEvent, { kind: 'REFUND' | 'OTHER' }>;
+
+export type RefundEvent = Extract<ProviderEvent, { kind: 'REFUND' }>;
 
 /** Why an event was held instead of applied. Each needs a person to look at it. */
 export type PaymentReviewReason =
@@ -19,10 +22,14 @@ export type PaymentReviewReason =
   | 'SUCCESS_AFTER_FAILURE'
   /** Failure reported for a payment already completed. */
   | 'FAILURE_AFTER_SUCCESS'
-  /** Deposits only: the wallet can't take the money right now. */
+  /** The wallet can't take the money right now (deposits; refunds into a closed wallet). */
   | 'WALLET_FROZEN'
   | 'WALLET_CLOSED'
-  | 'MAX_BALANCE';
+  | 'MAX_BALANCE'
+  /** A refund for a payment that isn't COMPLETED. */
+  | 'NOT_REFUNDABLE'
+  /** Refunds would add up to more than was paid. */
+  | 'REFUND_EXCEEDS_PAYMENT';
 
 /** What applying a provider event did; the webhook processor records it on the event. */
 export type PaymentEventOutcome =
@@ -42,7 +49,7 @@ export async function holdForReview(
   input: {
     transactionId: string;
     reference: string;
-    event: PaymentEvent;
+    event: PaymentEvent | RefundEvent;
     reason: PaymentReviewReason;
     now: number;
   },

@@ -5,6 +5,8 @@ import {
 } from '../../../src/modules/payments/providers/payment-provider.ts';
 import {
   MOCK_ACCOUNT_NUMBERS,
+  MOCK_BILLERS,
+  MOCK_CUSTOMER_REFERENCES,
   MOCK_SIGNATURE_HEADER,
   MockPaymentProvider,
 } from '../../../src/modules/payments/providers/mock-payment-provider.ts';
@@ -322,5 +324,112 @@ describe('MockPaymentProvider.parseWebhook', () => {
         data: { ...data, amount: '9007199254740993' },
       }),
     ).toHaveProperty('amount', 9_007_199_254_740_993n);
+  });
+});
+
+describe('MockPaymentProvider bill payments and refunds', () => {
+  const bill = (customerReference: string, reference = 'FND-TRX-20261015-b1b2b3') => ({
+    reference,
+    amount: 150_000n,
+    currency: 'NGN' as const,
+    billerCode: 'DSTV',
+    customerReference,
+  });
+
+  it('lists billers whose patterns are valid regular expressions', async () => {
+    const billers = await provider().listBillers();
+
+    expect(billers.map((b) => b.code)).toEqual(['MTN_AIRTIME', 'DSTV', 'IKEDC_PREPAID']);
+    for (const b of MOCK_BILLERS)
+      expect(() => new RegExp(b.customerReferencePattern)).not.toThrow();
+    expect(new RegExp(MOCK_BILLERS[0]?.customerReferencePattern ?? '').test('08031234567')).toBe(
+      true,
+    );
+  });
+
+  it('accepts a payment as pending and settles it as a signed bill.success', async () => {
+    const mock = provider();
+    const result = await mock.payBill(bill('1234567890'));
+
+    expect(result.status).toBe('PENDING');
+    expect(mock.parseWebhook(mock.settle(result.providerReference).rawBody)).toMatchObject({
+      kind: 'BILL',
+      outcome: 'SUCCEEDED',
+      eventType: 'bill.success',
+      amount: 150_000n,
+    });
+  });
+
+  it('follows the reserved customer references: fails later, or refused on the spot', async () => {
+    const mock = provider();
+    const later = await mock.payBill(bill(MOCK_CUSTOMER_REFERENCES.FAILS_LATER, 'r1'));
+    const refused = await mock.payBill(bill(MOCK_CUSTOMER_REFERENCES.REJECTED, 'r2'));
+
+    expect(mock.parseWebhook(mock.settle(later.providerReference).rawBody)).toMatchObject({
+      kind: 'BILL',
+      outcome: 'FAILED',
+      reason: 'The biller did not confirm the payment',
+    });
+    expect(refused).toMatchObject({ status: 'FAILED', reason: 'DStv could not be reached' });
+  });
+
+  it('throws for an unknown biller or a customer reference that does not fit it', async () => {
+    const mock = provider();
+
+    await expect(mock.payBill({ ...bill('1234567890'), billerCode: 'NOPE' })).rejects.toThrow();
+    await expect(mock.payBill(bill('12'))).rejects.toThrow();
+  });
+
+  it('refunds a succeeded payment, in part then the rest, each with its own refund reference', async () => {
+    const mock = provider();
+    const { providerReference } = await mock.payBill(bill('1234567890'));
+    mock.settle(providerReference);
+    const part = mock.parseWebhook(mock.refund(providerReference, { amount: 50_000n }).rawBody);
+    const rest = mock.parseWebhook(mock.refund(providerReference).rawBody);
+
+    expect(part).toMatchObject({ kind: 'REFUND', eventType: 'refund.processed', amount: 50_000n });
+    expect(rest).toMatchObject({ kind: 'REFUND', amount: 100_000n });
+    expect(part).toHaveProperty('refundReference');
+    expect(rest).not.toHaveProperty(
+      'refundReference',
+      (part as { refundReference: string }).refundReference,
+    );
+  });
+
+  it('can report the same refund again under its reference', async () => {
+    const mock = provider();
+    const { providerReference } = await mock.payBill(bill('1234567890'));
+    mock.settle(providerReference);
+    const again = mock.parseWebhook(
+      mock.refund(providerReference, { refundReference: 'rfd_same', amount: 1n }).rawBody,
+    );
+
+    expect(again).toMatchObject({ kind: 'REFUND', refundReference: 'rfd_same' });
+  });
+
+  it('refuses to refund a payment that has not succeeded, or a deposit', async () => {
+    const mock = provider();
+    const { providerReference } = await mock.payBill(bill('1234567890'));
+    const deposited = await mock.initializeDeposit({
+      reference: 'd1',
+      amount: 1n,
+      currency: 'NGN',
+      email: 'a@b.c',
+    });
+
+    expect(() => mock.refund(providerReference)).toThrow(/not a succeeded bill payment/);
+    mock.settle(deposited.providerReference);
+    expect(() => mock.refund(deposited.providerReference)).toThrow(/not a succeeded bill payment/);
+  });
+
+  it('returns null for a refund event without its refund reference', () => {
+    const mock = provider();
+    const body = mock.signedWebhook({
+      id: 'evt_1',
+      event: 'refund.processed',
+      data: { reference: 'r', provider_reference: 'p', amount: '1', currency: 'NGN' },
+    }).rawBody;
+
+    expect(mock.parseWebhook(body)).toBeNull();
   });
 });

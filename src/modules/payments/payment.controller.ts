@@ -1,4 +1,4 @@
-// HTTP layer for deposits and withdrawals.
+// HTTP layer for deposits, withdrawals and bill payments.
 import type { Request, Response } from 'express';
 import {
   IDEMPOTENT_REPLAYED_HEADER,
@@ -11,8 +11,13 @@ import { authOf } from '../../middleware/auth.middleware.ts';
 import { validated } from '../../middleware/validation.middleware.ts';
 import { auditContextFrom } from '../audit/audit.service.ts';
 import type { DepositService } from './deposit.service.ts';
-import { bankAccountQuery, createDepositBody, createWithdrawalBody } from './payment.schema.ts';
-import type { WithdrawalService } from './withdrawal.service.ts';
+import type { OutboundPaymentService } from './outbound-payment.service.ts';
+import {
+  bankAccountQuery,
+  createBillPaymentBody,
+  createDepositBody,
+  createWithdrawalBody,
+} from './payment.schema.ts';
 
 const noStore = (res: Response): Response =>
   res.set({ 'Cache-Control': 'no-store', Pragma: 'no-cache' });
@@ -28,7 +33,10 @@ function sendIdempotent(res: Response, result: IdempotentResult): void {
   noStore(res).status(result.status).json(result.body);
 }
 
-export function createPaymentController(deposits: DepositService, withdrawals: WithdrawalService) {
+export function createPaymentController(
+  deposits: DepositService,
+  outbound: OutboundPaymentService,
+) {
   return {
     createDeposit: validated({ body: createDepositBody }, async ({ body }, req, res) => {
       const idempotency = idempotencyOf(req);
@@ -39,14 +47,26 @@ export function createPaymentController(deposits: DepositService, withdrawals: W
     }),
 
     resolveBankAccount: validated({ query: bankAccountQuery }, async ({ query }, _req, res) => {
-      noStore(res).json(success({ account: await withdrawals.resolveBankAccount(query) }));
+      noStore(res).json(success({ account: await outbound.resolveBankAccount(query) }));
     }),
 
     createWithdrawal: validated({ body: createWithdrawalBody }, async ({ body }, req, res) => {
       const idempotency = idempotencyOf(req);
       sendIdempotent(
         res,
-        await withdrawals.create(authOf(req).userId, body, idempotency, auditContextFrom(req)),
+        await outbound.withdraw(authOf(req).userId, body, idempotency, auditContextFrom(req)),
+      );
+    }),
+
+    listBillers: async (_req: Request, res: Response) => {
+      noStore(res).json(success({ billers: await outbound.listBillers() }));
+    },
+
+    payBill: validated({ body: createBillPaymentBody }, async ({ body }, req, res) => {
+      const idempotency = idempotencyOf(req);
+      sendIdempotent(
+        res,
+        await outbound.payBill(authOf(req).userId, body, idempotency, auditContextFrom(req)),
       );
     }),
   };

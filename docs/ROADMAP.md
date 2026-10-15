@@ -90,11 +90,11 @@ Legend: `[x]` done · `[ ]` to do
 - [x] `POST /transfers`: checks, limits, idempotency, atomic posting, fees. Plus `GET /transfers/recipient` (D2 lookup, check-digit typo refusal, rate-limited); limits checked under the wallet locks (daily outflow summed under the sender's lock); recipient refusals generic; deadlocks retried ×3; 26 checks over HTTP on PostgreSQL 18.3
 - [x] Reversals: admin service (`transactions:reverse`; endpoint in Stage 19) for completed transfers: REVERSAL + separate fee REFUND, original → REVERSED, exempt from limits and freezes but never overdraws, no self-action; 16 checks on PostgreSQL 18.3
 
-### Stage 14 — Payments
+### Stage 14 — Payments ✅
 - [x] `PaymentProvider` interface + `MockPaymentProvider`: deposits, name enquiry, payouts, status, webhook verify/parse; reference-idempotent; Paystack-shaped signed webhooks from test hooks; 31 tests
 - [x] Deposits (pending → webhook completes): `POST /payments/deposits` (idempotent; provider called inside the transaction, nothing kept on outage) and `applyEvent` (row-locked, exactly once; mismatches, late news, frozen wallets and max balance held for review, never credited); 28 checks on PostgreSQL 18.3
 - [x] Withdrawals (hold → payout → settle/release): name enquiry; `POST /payments/withdrawals` holds amount + ₦10 fee and commits before the payout is sent; `dispatch` is retry-safe; `applyEvent` settles or releases (matched by our reference if the webhook wins the race); 32 checks on PostgreSQL 18.3
-- [ ] Payments + refunds
+- [x] Payments + refunds: bill payments (`GET /payments/billers`, `POST /payments/bills`) through the same hold → dispatch → settle/release service as withdrawals; biller refunds as separate REFUND transactions (partial, deduplicated by refund reference, capped at what was paid); 26 checks on PostgreSQL 18.3
 
 ### Stage 15 — Webhooks
 - [ ] Raw-body route, HMAC verification, event-ID dedupe, persistence

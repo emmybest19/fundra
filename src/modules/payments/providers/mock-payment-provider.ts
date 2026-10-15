@@ -1,7 +1,7 @@
 // MockPaymentProvider: a deterministic stand-in for a payment provider, shaped like a
-// Paystack-style API. Reserved account numbers decide payout outcomes, like a sandbox, and
-// test hooks produce correctly signed webhooks so deposits and withdrawals can be driven end
-// to end. Nothing it does moves real money.
+// Paystack-style API. Reserved account numbers and customer references decide outcomes, like
+// a sandbox, and test hooks produce correctly signed webhooks so deposits, withdrawals, bill
+// payments and refunds can be driven end to end. Nothing it does moves real money.
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
 import { z } from 'zod';
@@ -9,6 +9,8 @@ import { CURRENCIES, type Currency } from '../../../common/constants/currency.ts
 import {
   PaymentProviderUnavailableError,
   type BankAccount,
+  type Biller,
+  type BillPaymentRequest,
   type DepositRequest,
   type DepositSession,
   type PaymentProvider,
@@ -29,18 +31,58 @@ export const MOCK_ACCOUNT_NUMBERS = {
   REJECTED: '0000000003',
 } as const;
 
+/** Reserved customer references (phone, smartcard, meter) for bill payments. */
+export const MOCK_CUSTOMER_REFERENCES = {
+  /** Accepted, then the webhook reports it failed. */
+  FAILS_LATER: '00000000002',
+  /** Refused on the spot. */
+  REJECTED: '00000000003',
+} as const;
+
+/** The mock's billers. Real providers return their own catalogue from the same call. */
+export const MOCK_BILLERS: readonly Biller[] = [
+  {
+    code: 'MTN_AIRTIME',
+    name: 'MTN Airtime',
+    category: 'AIRTIME',
+    customerReferenceLabel: 'Phone number',
+    customerReferencePattern: '^0\\d{10}$',
+  },
+  {
+    code: 'DSTV',
+    name: 'DStv',
+    category: 'TV',
+    customerReferenceLabel: 'Smartcard number',
+    customerReferencePattern: '^\\d{10,11}$',
+  },
+  {
+    code: 'IKEDC_PREPAID',
+    name: 'Ikeja Electric (prepaid)',
+    category: 'ELECTRICITY',
+    customerReferenceLabel: 'Meter number',
+    customerReferencePattern: '^\\d{11,13}$',
+  },
+];
+
 export const MOCK_SIGNATURE_HEADER = 'x-mock-signature';
+
+type Kind = 'DEPOSIT' | 'PAYOUT' | 'BILL';
 
 const EVENT_TYPES = {
   DEPOSIT: { SUCCEEDED: 'charge.success', FAILED: 'charge.failed' },
   PAYOUT: { SUCCEEDED: 'transfer.success', FAILED: 'transfer.failed' },
+  BILL: { SUCCEEDED: 'bill.success', FAILED: 'bill.failed' },
 } as const;
 
-const KNOWN_EVENTS = new Map<string, { kind: 'DEPOSIT' | 'PAYOUT'; outcome: Outcome }>([
+const REFUND_EVENT = 'refund.processed';
+
+const KNOWN_EVENTS = new Map<string, { kind: Kind; outcome: Outcome }>([
   ['charge.success', { kind: 'DEPOSIT', outcome: 'SUCCEEDED' }],
   ['charge.failed', { kind: 'DEPOSIT', outcome: 'FAILED' }],
   ['transfer.success', { kind: 'PAYOUT', outcome: 'SUCCEEDED' }],
   ['transfer.failed', { kind: 'PAYOUT', outcome: 'FAILED' }],
+  ['bill.success', { kind: 'BILL', outcome: 'SUCCEEDED' }],
+  ['bill.failed', { kind: 'BILL', outcome: 'FAILED' }],
 ]);
 
 type Outcome = 'SUCCEEDED' | 'FAILED';
@@ -56,12 +98,14 @@ const webhookPayload = z.object({
       amount: z.string().regex(/^[1-9]\d{0,18}$/),
       currency: z.enum(CURRENCIES),
       reason: z.string().max(500).optional(),
+      /** Refund events only. */
+      refund_reference: z.string().min(1).max(200).optional(),
     })
     .optional(),
 });
 
 interface MockPayment {
-  kind: 'DEPOSIT' | 'PAYOUT';
+  kind: Kind;
   providerReference: string;
   reference: string;
   amount: bigint;
@@ -70,7 +114,15 @@ interface MockPayment {
   /** What settling this payment will report, unless a test overrides it. */
   plannedOutcome: Outcome;
   reason?: string;
+  /** Refunded so far (bill payments only). */
+  refunded: bigint;
 }
+
+const FAILURE_REASONS: Readonly<Record<Kind, string>> = {
+  DEPOSIT: 'The card was declined',
+  PAYOUT: 'The beneficiary bank is offline',
+  BILL: 'The biller did not confirm the payment',
+};
 
 /** `500000 NGN`: amount and currency compared as one. */
 function money(payment: { amount: bigint; currency: Currency }): string {
@@ -146,6 +198,41 @@ export class MockPaymentProvider implements PaymentProvider {
     });
   }
 
+  listBillers(): Promise<readonly Biller[]> {
+    return this.#call(() => MOCK_BILLERS);
+  }
+
+  payBill(request: BillPaymentRequest): Promise<PayoutResult> {
+    return this.#call(() => {
+      const biller = MOCK_BILLERS.find((b) => b.code === request.billerCode);
+      if (
+        biller === undefined ||
+        !new RegExp(biller.customerReferencePattern).test(request.customerReference)
+      ) {
+        throw new Error('Bill payment for an unknown biller or customer reference');
+      }
+      const payment = this.#open(
+        'BILL',
+        request,
+        request.customerReference === MOCK_CUSTOMER_REFERENCES.FAILS_LATER ? 'FAILED' : 'SUCCEEDED',
+      );
+      if (
+        request.customerReference === MOCK_CUSTOMER_REFERENCES.REJECTED &&
+        payment.status === 'PENDING'
+      ) {
+        payment.status = 'FAILED';
+        payment.reason = `${biller.name} could not be reached`;
+      }
+      return payment.status === 'FAILED'
+        ? {
+            providerReference: payment.providerReference,
+            status: 'FAILED',
+            reason: payment.reason ?? 'Bill payment failed',
+          }
+        : { providerReference: payment.providerReference, status: 'PENDING' };
+    });
+  }
+
   getPaymentStatus(providerReference: string): Promise<ProviderPaymentStatus | null> {
     return this.#call(() => {
       const payment = this.#payments.get(providerReference);
@@ -178,6 +265,20 @@ export class MockPaymentProvider implements PaymentProvider {
     if (!parsed.success) return null;
     const { id, event, data } = parsed.data;
 
+    if (event === REFUND_EVENT) {
+      if (data?.refund_reference === undefined) return null;
+      return {
+        kind: 'REFUND',
+        eventId: id,
+        eventType: event,
+        providerReference: data.provider_reference,
+        reference: data.reference,
+        refundReference: data.refund_reference,
+        amount: BigInt(data.amount),
+        currency: data.currency,
+        ...(data.reason === undefined ? {} : { reason: data.reason }),
+      };
+    }
     const known = KNOWN_EVENTS.get(event);
     if (known === undefined) return { kind: 'OTHER', eventId: id, eventType: event };
     if (data === undefined) return null;
@@ -219,9 +320,7 @@ export class MockPaymentProvider implements PaymentProvider {
     }
     payment.status = outcome;
     if (outcome === 'FAILED') {
-      payment.reason ??=
-        overrides.reason ??
-        (payment.kind === 'DEPOSIT' ? 'The card was declined' : 'The beneficiary bank is offline');
+      payment.reason ??= overrides.reason ?? FAILURE_REASONS[payment.kind];
     }
     return this.signedWebhook({
       id: `evt_${randomUUID()}`,
@@ -232,6 +331,35 @@ export class MockPaymentProvider implements PaymentProvider {
         amount: (overrides.amount ?? payment.amount).toString(),
         currency: payment.currency,
         ...(payment.reason === undefined ? {} : { reason: payment.reason }),
+      },
+    });
+  }
+
+  /**
+   * Refunds part or all of a succeeded bill payment and returns the webhook. Each call is a
+   * new refund with its own refund reference; resend the returned bytes, or pass the same
+   * `refundReference`, to simulate the same refund reported twice.
+   */
+  refund(
+    providerReference: string,
+    options: { amount?: bigint; refundReference?: string; reason?: string } = {},
+  ): SignedWebhook {
+    const payment = this.#payments.get(providerReference);
+    if (payment?.kind !== 'BILL' || payment.status !== 'SUCCEEDED') {
+      throw new Error(`Payment ${providerReference} is not a succeeded bill payment`);
+    }
+    const amount = options.amount ?? payment.amount - payment.refunded;
+    if (options.refundReference === undefined) payment.refunded += amount;
+    return this.signedWebhook({
+      id: `evt_${randomUUID()}`,
+      event: REFUND_EVENT,
+      data: {
+        reference: payment.reference,
+        provider_reference: providerReference,
+        amount: amount.toString(),
+        currency: payment.currency,
+        reason: options.reason ?? 'The biller reversed the payment',
+        refund_reference: options.refundReference ?? `rfd_${randomUUID()}`,
       },
     });
   }
@@ -290,6 +418,7 @@ export class MockPaymentProvider implements PaymentProvider {
       currency: request.currency,
       status: 'PENDING',
       plannedOutcome,
+      refunded: 0n,
     };
     this.#payments.set(payment.providerReference, payment);
     this.#byReference.set(request.reference, payment.providerReference);

@@ -53,6 +53,30 @@ export interface OutboxEventPayloads {
     userId: string;
     reason: string;
   };
+  /** A bill payment the biller confirmed. */
+  'payment.completed': {
+    transactionId: string;
+    reference: string;
+    userId: string;
+    amount: AmountString;
+    fee: AmountString;
+    currency: Currency;
+  };
+  'payment.failed': {
+    transactionId: string;
+    reference: string;
+    userId: string;
+    reason: string;
+  };
+  /** Money given back for a bill payment: `transactionId` is the REFUND, `refundOf` the payment. */
+  'payment.refunded': {
+    transactionId: string;
+    refundOf: string;
+    reference: string;
+    userId: string;
+    amount: AmountString;
+    currency: Currency;
+  };
   'kyc.status_changed': {
     userId: string;
     status: 'APPROVED' | 'REJECTED' | 'PENDING' | 'IN_REVIEW';

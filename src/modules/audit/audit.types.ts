@@ -51,7 +51,10 @@ export const AUDIT_ACTIONS = [
   'withdrawal.completed',
   'withdrawal.failed',
   'payment.review_required',
+  'payment.requested',
   'payment.completed',
+  'payment.failed',
+  'payment.refunded',
   'transaction.reversed',
   // Beneficiaries (Stage 18)
   'beneficiary.created',

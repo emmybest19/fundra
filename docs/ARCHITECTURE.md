@@ -562,12 +562,12 @@ Deposits, withdrawals and (later) payments reach the outside world only through 
 
 | Concern | Design |
 |---|---|
-| Calls | `initializeDeposit` (checkout URL), `resolveBankAccount` (name enquiry before a withdrawal), `sendPayout`, `getPaymentStatus` (reconciliation when a webhook never arrives). The contract grows with payments (Stage 14 item 4), not before |
+| Calls | `initializeDeposit` (checkout URL), `resolveBankAccount` (name enquiry before a withdrawal), `sendPayout`, `listBillers` and `payBill` (bill payments, asynchronous like payouts), `getPaymentStatus` (reconciliation when a webhook never arrives) |
 | Retries | Fundra's transaction reference is the provider's idempotency key: a repeated call with the same reference returns the same payment, and a reference reused for different money is refused. A timed-out payout can be retried without paying twice |
 | Payouts | Asynchronous: `PENDING` means accepted, and the webhook settles it. `FAILED` means refused on the spot, so no money left |
 | Outages | `PaymentProviderUnavailableError`: whether money moved is unknown, so the attempt stays open for reconciliation; mapped to 503 |
 | Webhooks | `verifyWebhook` checks the signature over the **exact bytes** received, in constant time. `parseWebhook` turns a verified body into a normalized event: deposit or payout, succeeded or failed, with provider reference, Fundra reference, amount (minor-unit string → `bigint`, exact beyond 2^53) and currency. Event types Fundra doesn't act on come back as `OTHER`, and malformed bodies as `null`. The processor still checks amount and currency against the transaction |
-| Mock | Paystack-shaped: HMAC-SHA512 in `x-mock-signature`, events `charge.success/failed` and `transfer.success/failed`. Account numbers decide payouts: `0000000001` doesn't resolve, `…02` is accepted then fails, `…03` is refused on the spot, and any other 10 digits succeed. Checkout URLs use the reserved `.invalid` domain. Test hooks: `settle()` finishes a payment and returns its signed webhook (optionally failed, or with a different amount); `signedWebhook()` signs any payload; `setAvailable(false)` simulates an outage |
+| Mock | Paystack-shaped: HMAC-SHA512 in `x-mock-signature`, events `charge.success/failed`, `transfer.success/failed`, `bill.success/failed` and `refund.processed` (with its own `refund_reference`). Account numbers decide payouts: `0000000001` doesn't resolve, `…02` is accepted then fails, `…03` is refused on the spot, and any other 10 digits succeed. Bill payments follow the customer reference the same way (`00000000002`, `…03`). Three billers: MTN airtime, DStv, Ikeja Electric (prepaid). Checkout URLs use the reserved `.invalid` domain. Test hooks: `settle()` finishes a payment and returns its signed webhook (optionally failed, or with a different amount); `refund()` refunds part or all of a bill payment; `signedWebhook()` signs any payload; `setAvailable(false)` simulates an outage |
 
 Verified by 31 unit tests and three deliberate code breaks, each caught: a signature check that always passes, a retried reference opening a second payment, and a known event accepted without its data.
 
@@ -616,7 +616,7 @@ Verified on PostgreSQL 18.3: 28 checks (start, replay, every refusal, provider o
 3. Webhook success: post `Dr wallet / Cr settlement`, settle the hold, mark `COMPLETED`.
 4. Webhook failure: release the hold and mark `FAILED`. Nothing is posted.
 
-[withdrawal.service.ts](../src/modules/payments/withdrawal.service.ts):
+[outbound-payment.service.ts](../src/modules/payments/outbound-payment.service.ts) (shared with bill payments, §8.5):
 
 | Step | Design |
 |---|---|
@@ -642,6 +642,28 @@ Verified on PostgreSQL 18.3: 32 checks covering:
 - available = ledger − active holds for every wallet.
 
 Three deliberate code breaks were each caught: dispatch re-sending an already-sent payout, the amount check removed, and matching by our own reference removed.
+
+### 8.5 Bill payments and refunds — *Built (the webhook endpoint is Stage 15)*
+
+The spec's "payments" are **bill payments**: airtime, TV, electricity, paid through the provider (the `payments` table already described them as outbound provider payments). They run through exactly the same steps as withdrawals in `OutboundPaymentService`. Only the destination and the provider call differ, so there is one implementation, not two copies.
+
+| Concern | Design |
+|---|---|
+| Billers (`GET /payments/billers`) | The provider's catalogue: code, name, category, the label for what the customer types ("Smartcard number") and a pattern it must match |
+| Pay (`POST /payments/bills`) | Unknown biller → `404 BILLER_NOT_FOUND`; a customer reference that doesn't fit the biller → `422` naming it. Then as a withdrawal: fee (₦0, D6), limits shared with transfers and withdrawals, a hold, `PROCESSING`, COMMIT, then `payBill` with our reference. The biller and customer reference live in `payments.metadata.bill` (the row's bank columns stay empty) |
+| Outcome | `bill.success` settles the hold (`Dr wallet / Cr PROVIDER_SETTLEMENT`); `bill.failed` releases it. Audit and outbox `payment.completed` / `payment.failed`. A payout event for a bill payment (or the reverse) is held for review (`WRONG_KIND`) |
+| Refunds (`applyRefund`) | A biller giving money back (e.g. a token that couldn't be issued) arrives as its own provider event with a **refund reference**. It becomes a separate `REFUND` transaction (`Dr PROVIDER_SETTLEMENT / Cr wallet`, metadata `refundOf`), and the payment stays `COMPLETED`, so history shows both. Partial refunds are allowed. Under the payment's row lock: the same refund reference twice → `ALREADY_APPLIED`; refunds adding up to more than was paid → review (`REFUND_EXCEEDS_PAYMENT`); a refund for a payment that isn't `COMPLETED` → review (`NOT_REFUNDABLE`). Refunds pass frozen wallets and limits (it's the user's own money) but not a closed wallet (review). Audit and outbox `payment.refunded` |
+
+Verified on PostgreSQL 18.3: 26 checks covering:
+- the catalogue, a payment's hold and entries, an unknown biller and a bad meter number;
+- failing later and refused on the spot;
+- a partial refund, then the rest;
+- the same refund twice (same bytes, or a new event ID) and twice at once;
+- one kobo too much, a refund before completion, a frozen and a closed wallet;
+- wrong-kind events in both directions, including through the deposit side;
+- shared limits and the books balanced.
+
+Three deliberate code breaks were each caught: refund dedupe removed, the refund total cap removed, and the event-kind check removed.
 
 ---
 
@@ -899,5 +921,5 @@ Admins are `User` rows holding one or more admin roles (`SUPPORT`, `COMPLIANCE`,
 
 - A fee is extra entries in the **same** ledger transaction: `Dr sender (amount + fee) / Cr recipient (amount) / Cr FEE_REVENUE (fee)`.
 - The fee and the operation therefore succeed or fail together, and the balance check covers `amount + fee`.
-- Fee amounts come from a seeded fee schedule, not code: ₦0 for P2P transfers, a flat ₦10 for bank withdrawals (Stage 14; about what an NIP transfer costs). A type with no active rule fails closed.
+- Fee amounts come from a seeded fee schedule, not code: ₦0 for P2P transfers and bill payments, a flat ₦10 for bank withdrawals (Stage 14; about what an NIP transfer costs). A type with no active rule fails closed.
 - The response and the transaction history show `amount`, `fee` and `total` separately.

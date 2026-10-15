@@ -60,6 +60,7 @@ export const ErrorCode = {
 
   // Payments (src/modules/payments)
   BANK_ACCOUNT_NOT_FOUND: 'BANK_ACCOUNT_NOT_FOUND',
+  BILLER_NOT_FOUND: 'BILLER_NOT_FOUND',
 
   // Limits (src/modules/kyc/tier-limits.ts; applied by money movement)
   LIMIT_PER_TRANSACTION_EXCEEDED: 'LIMIT_PER_TRANSACTION_EXCEEDED',
