@@ -67,6 +67,9 @@ export const ErrorCode = {
   BENEFICIARY_SELF: 'BENEFICIARY_SELF',
   BENEFICIARY_LIMIT: 'BENEFICIARY_LIMIT',
 
+  // Admin (src/modules/admin)
+  ADMIN_SELF_ACTION: 'ADMIN_SELF_ACTION',
+
   // Webhooks (src/modules/webhooks)
   INVALID_WEBHOOK_SIGNATURE: 'INVALID_WEBHOOK_SIGNATURE',
 

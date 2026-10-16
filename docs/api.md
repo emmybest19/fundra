@@ -101,6 +101,7 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 409 | `BENEFICIARY_EXISTS` | That recipient is already saved |
 | 422 | `BENEFICIARY_SELF` | You can't save yourself as a beneficiary |
 | 422 | `BENEFICIARY_LIMIT` | You have the maximum number of beneficiaries (100) |
+| 403 | `ADMIN_SELF_ACTION` | (Admin) You can't take this action on your own account |
 | 401 | `INVALID_WEBHOOK_SIGNATURE` | (Payment provider) The webhook's signature is missing or doesn't match its body |
 | 409 | `KYC_TIER_ORDER` | Tiers are taken in order; complete the previous tier first |
 | 409 | `KYC_TIER_ALREADY_APPROVED` | You're already verified at this tier or higher |
@@ -754,6 +755,31 @@ What Fundra has told you, newest first. Email, SMS and push copies follow your [
 #### `POST /api/v1/notifications/:id/read` · `POST /api/v1/notifications/read-all`
 
 `204` for one (a notification that isn't yours is `404`); `{ "data": { "marked": 3 } }` for all.
+
+### Admin
+
+Staff only: each route needs one permission (see [ROLE_PERMISSIONS](../src/common/constants/rbac.ts)); without it the answer is `403 FORBIDDEN`. Lists are cursor-paged (`limit` up to 100, `cursor`), newest first. Never cached.
+
+| Method and path | Permission | Body / query |
+|---|---|---|
+| `GET /admin/users` | `users:read` | `q` (email, phone, handle or name), `status` |
+| `GET /admin/users/:id` | `users:read` | |
+| `POST /admin/users/:id/suspend` · `/reactivate` | `users:suspend` | `{ "reason": "…" }` |
+| `GET /admin/kyc` · `GET /admin/kyc/:id` | `kyc:read` | `status` (`PENDING`, `IN_REVIEW`) |
+| `POST /admin/kyc/:id/review` · `/approve` | `kyc:review` | |
+| `POST /admin/kyc/:id/reject` | `kyc:review` | `{ "reason": "…" }` (shown to the user) |
+| `GET /admin/transactions` · `GET /admin/transactions/:id` | `transactions:read` | `userId`, `walletId`, `reference`, `type`, `status`, `from`, `to` |
+| `POST /admin/transactions/:id/reverse` | `transactions:reverse` | `{ "reason": "…" }` |
+| `GET /admin/wallets/:id` | `wallets:read` | |
+| `POST /admin/wallets/:id/freeze` · `/unfreeze` | `wallets:freeze` | `{ "reason": "…" }` (audit only, never shown to the owner) |
+| `POST /admin/wallets/:id/reopen` | `wallets:freeze` | |
+| `GET /admin/webhooks` | `webhooks:read` | `status` |
+| `GET /admin/audit-logs` | `audit_logs:read` | `actorUserId`, `action`, `resourceType`, `resourceId`, `from`, `to` |
+| `GET /admin/settings` | `settings:read` | |
+| `PUT /admin/settings/tier-limits/:tier/:currency` | `settings:update` | `{ "perTransactionLimit": "5000000", "dailyOutflowLimit": "5000000", "maxBalance": null }` |
+| `PUT /admin/settings/fee-rules/:transactionType/:currency` | `settings:update` | `{ "flatFee": "1000", "percentageBps": 0, "minFee": null, "maxFee": null }` |
+
+`403 ADMIN_SELF_ACTION`: you can't suspend or reactivate your own account. Suspending a staff account needs `roles:assign`.
 
 ### Webhooks (from the payment provider)
 

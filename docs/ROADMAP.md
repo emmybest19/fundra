@@ -113,7 +113,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] CRUD with ownership checks + audit: Fundra wallets (D2 lookup) and bank accounts (name enquiry); owner-scoped queries (404 otherwise); nickname-only updates (no silent repointing); duplicates, self and a 100 cap refused; masked audit; 19 checks on PostgreSQL 18.3
 
 ### Stage 19 — Admin
-- [ ] Users (view/suspend/reactivate), KYC review (`KycService.startReview/approve/reject` exist), transactions, wallets (`WalletService.freeze/unfreeze/reopen` exist), audit logs, settings
+- [x] Users (view/suspend/reactivate), KYC review (`KycService.startReview/approve/reject` exist), transactions, wallets (`WalletService.freeze/unfreeze/reopen` exist), audit logs, settings: `/admin/*` built from one route table (each with its permission); no self-action, staff accounts protected, reactivation reopens wallets; fee history kept; 34 checks on PostgreSQL 18.3
 - [ ] Per-permission protection
 
 ### Stage 20 — Reconciliation & statements

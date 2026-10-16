@@ -4,6 +4,10 @@ import { env } from '../config/env.ts';
 import type { PrismaClient } from '../generated/prisma/client.ts';
 import { createAuthenticate } from '../middleware/auth.middleware.ts';
 import type { RateLimitStore } from '../middleware/rate-limit.middleware.ts';
+import { AdminSettingsService } from '../modules/admin/admin-settings.service.ts';
+import { createAdminRouter } from '../modules/admin/admin.routes.ts';
+import { AdminService } from '../modules/admin/admin.service.ts';
+import { TransferReversalService } from '../modules/transfers/transfer-reversal.service.ts';
 import { createAuthRouter } from '../modules/auth/auth.routes.ts';
 import { AuthService } from '../modules/auth/auth.service.ts';
 import { OtpService, type OtpStore } from '../modules/auth/otp.ts';
@@ -83,21 +87,23 @@ export function createApiRouter({
     }),
   );
 
+  const kyc = new KycService(
+    db,
+    kycProvider,
+    documentStorage,
+    new IdentityNumberCrypto(env.KYC_ENCRYPTION_KEY, env.KYC_HMAC_KEY),
+  );
   router.use(
     '/kyc',
     createKycRouter({
-      kyc: new KycService(
-        db,
-        kycProvider,
-        documentStorage,
-        new IdentityNumberCrypto(env.KYC_ENCRYPTION_KEY, env.KYC_HMAC_KEY),
-      ),
+      kyc,
       authenticate,
       rateLimitStore,
     }),
   );
 
-  router.use('/wallets', createWalletRouter({ wallets: new WalletService(db), authenticate }));
+  const wallets = new WalletService(db);
+  router.use('/wallets', createWalletRouter({ wallets, authenticate }));
 
   router.use(
     '/transactions',
@@ -135,6 +141,18 @@ export function createApiRouter({
       beneficiaries: new BeneficiaryService(db, outbound),
       authenticate,
       rateLimitStore,
+    }),
+  );
+
+  router.use(
+    '/admin',
+    createAdminRouter({
+      admin: new AdminService(db),
+      settings: new AdminSettingsService(db),
+      kyc,
+      wallets,
+      reversals: new TransferReversalService(db),
+      authenticate,
     }),
   );
 

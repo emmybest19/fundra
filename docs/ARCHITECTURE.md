@@ -399,6 +399,32 @@ Verified on PostgreSQL 18.3 over HTTP: 19 checks covering:
 
 Three deliberate code breaks were each caught: reads not scoped to the owner, the self check removed, and duplicates not mapped to 409.
 
+### 6.5 Admin — *Built*
+
+`/api/v1/admin` ([admin module](../src/modules/admin/)). Every route is declared once in `ADMIN_ROUTES` with the one permission it needs, and the router is built from that table, so no route can be mounted unguarded. All routes need a verified staff account and are never cached.
+
+| Area | Routes (permission) | Notes |
+|---|---|---|
+| Users | list and search (email, phone, handle, name; status), detail with wallets and sessions (`users:read`); suspend, reactivate (`users:suspend`) | Suspend ends every session at once. Nobody acts on their own account (`403 ADMIN_SELF_ACTION`); a staff account can only be suspended by someone holding `roles:assign` (SUPER_ADMIN), so one admin can't lock out another. Reactivation restores ACTIVE (or PENDING_VERIFICATION if a contact isn't verified) and, for a deactivated account, reopens its CLOSED wallets in the same transaction. Reasons are required and audited |
+| KYC | queue (PENDING / IN_REVIEW), case (`kyc:read`); review, approve, reject (`kyc:review`) | The KYC service's own rules apply (no self-review, provider check must pass). Unknown profiles are 404 |
+| Transactions | list (user, wallet, reference, type, status, dates), detail with ledger entries, hold, provider details (account masked), reversal and webhooks (`transactions:read`); reverse (`transactions:reverse`) | Reversal is §8.1's service: no self-action, never an overdraft |
+| Wallets | detail (`wallets:read`); freeze, unfreeze, reopen (`wallets:freeze`) | The wallet service's lifecycle and self-action rules |
+| Webhooks, audit | stored webhook events with payloads (`webhooks:read`); the audit trail by actor, action, resource and dates (`audit_logs:read`) | Cursor-paged, newest first |
+| Settings | tier limits and active fee rules (`settings:read`); update a tier's limits, set a fee (`settings:update`) | Applies to the very next transaction (read every time). A fee change retires the active rule and creates a new one, so past fees stay explainable. Audited with before and after |
+
+Verified on PostgreSQL 18.3 over HTTP with staff in each role (SUPPORT, COMPLIANCE, FINANCE, SUPER_ADMIN) and customers, in 34 checks covering:
+- search, detail, suspend (sessions ended, token refused), reactivate, and reopening a deactivated account's wallet;
+- self-action, staff protection, repeats and missing reasons;
+- a real Tier 3 case through the queue, review and approval;
+- listing, detail and reversal of a transfer, and reversing twice;
+- freeze blocking a transfer, then unfreeze;
+- webhooks and audit;
+- a new fee charged on the next transfer, with history and audit kept;
+- a lower limit enforced at once, and an invalid limit refused;
+- customers and anonymous callers refused.
+
+Three deliberate code breaks were each caught: the self check removed, wallets not reopened, and the router skipping `authorize`.
+
 ## 7. Financial core — *Partly built (posting)*
 
 ### 7.1 Money representation
@@ -994,7 +1020,6 @@ This reflects the repository as it stands, not the design.
 | Gap | Impact |
 |---|---|
 | Business modules beyond auth and users are placeholders | Their `/api/v1` paths return 404 until each stage mounts them |
-| Deactivated accounts can't be reactivated yet | Reactivation is an admin action (Stage 19). It must reopen the `CLOSED` wallets too |
 | Redis is a *non-critical* readiness check | Deliberate (re-decided in Stage 7): during a Redis outage, readiness says `degraded` while OTP flows return 503. Revisit for job queues (Stage 16) |
 | Verification and reset codes aren't delivered yet | `MemoryMessageSender` holds them in memory until Stage 17 adds real email/SMS; the server logs a warning at startup. Tests read codes from the memory sender |
 | Rate limiting hasn't run against a real Redis server | The Lua script was verified on ioredis-mock's Lua engine; real Redis 8.8 waits for Docker and the Stage 6 integration tests |
