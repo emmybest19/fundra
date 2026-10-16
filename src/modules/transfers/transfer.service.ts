@@ -43,7 +43,7 @@ type Tx = Prisma.TransactionClient;
 /** Deadlocks, serialization failures, lock timeouts: rolled back, so safe to run again. */
 const MAX_ATTEMPTS = 3;
 
-type RecipientWallet = Wallet & {
+export type RecipientWallet = Wallet & {
   user: { status: string; handle: string; firstName: string; lastName: string };
 };
 
@@ -51,6 +51,39 @@ const recipientCannotReceive = () =>
   new UnprocessableError("The recipient can't receive this amount right now.", {
     code: ErrorCode.RECIPIENT_CANNOT_RECEIVE,
   });
+
+/**
+ * D2: the wallet a handle or account number names, if it can receive: its owner not suspended
+ * or deactivated, the wallet not CLOSED. Anything else is RECIPIENT_NOT_FOUND, so nobody learns
+ * which. Shared with beneficiaries.
+ */
+export async function findRecipientWallet(
+  db: Pick<Tx, 'wallet' | 'user'>,
+  currency: Currency,
+  by: { handle?: string; accountNumber?: string },
+): Promise<RecipientWallet> {
+  const include = {
+    user: { select: { status: true, handle: true, firstName: true, lastName: true } },
+  } as const;
+  const wallet =
+    by.accountNumber !== undefined
+      ? await db.wallet.findUnique({ where: { accountNumber: by.accountNumber }, include })
+      : await db.wallet.findFirst({
+          where: { currency, user: { handle: by.handle ?? '' } },
+          include,
+        });
+  if (
+    wallet?.currency !== currency ||
+    wallet.status === 'CLOSED' ||
+    wallet.user.status === 'SUSPENDED' ||
+    wallet.user.status === 'DEACTIVATED'
+  ) {
+    throw new NotFoundError('No Fundra wallet matches that recipient.', {
+      code: ErrorCode.RECIPIENT_NOT_FOUND,
+    });
+  }
+  return wallet;
+}
 
 export class TransferService {
   readonly #db: PrismaClient;
@@ -69,7 +102,7 @@ export class TransferService {
    * nobody. Rate limited by the route against enumeration.
    */
   async lookupRecipient(query: RecipientQuery): Promise<RecipientView> {
-    const wallet = await this.#findRecipient(this.#db, query.currency, {
+    const wallet = await findRecipientWallet(this.#db, query.currency, {
       ...(query.handle === undefined ? {} : { handle: query.handle }),
       ...(query.accountNumber === undefined ? {} : { accountNumber: query.accountNumber }),
     });
@@ -124,7 +157,7 @@ export class TransferService {
         code: ErrorCode.KYC_REQUIRED,
       });
     }
-    const recipient = await this.#findRecipient(tx, currency, {
+    const recipient = await findRecipientWallet(tx, currency, {
       ...(input.recipientHandle === undefined ? {} : { handle: input.recipientHandle }),
       ...(input.recipientAccountNumber === undefined
         ? {}
@@ -249,35 +282,6 @@ export class TransferService {
       },
     });
     return transaction.id;
-  }
-
-  /** A wallet that can receive: its owner not suspended or deactivated, the wallet not CLOSED. */
-  async #findRecipient(
-    db: Pick<Tx, 'wallet' | 'user'>,
-    currency: Currency,
-    by: { handle?: string; accountNumber?: string },
-  ): Promise<RecipientWallet> {
-    const include = {
-      user: { select: { status: true, handle: true, firstName: true, lastName: true } },
-    } as const;
-    const wallet =
-      by.accountNumber !== undefined
-        ? await db.wallet.findUnique({ where: { accountNumber: by.accountNumber }, include })
-        : await db.wallet.findFirst({
-            where: { currency, user: { handle: by.handle ?? '' } },
-            include,
-          });
-    if (
-      wallet?.currency !== currency ||
-      wallet.status === 'CLOSED' ||
-      wallet.user.status === 'SUSPENDED' ||
-      wallet.user.status === 'DEACTIVATED'
-    ) {
-      throw new NotFoundError('No Fundra wallet matches that recipient.', {
-        code: ErrorCode.RECIPIENT_NOT_FOUND,
-      });
-    }
-    return wallet;
   }
 
   async #tier(tx: Tx, userId: string): Promise<number> {

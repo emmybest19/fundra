@@ -123,7 +123,8 @@ docs/              project definition, architecture, case study, API, security
 | Webhooks (Stage 15): `POST /webhooks/payments` (signature, dedupe, persistence, processing into payments) | Done |
 | Background jobs (Stage 16): queues + worker process (`npm run start:worker`) | Done (queues, worker, outbox relay, `expire-otp`). Not yet run against a real Redis, which needs Redis installed |
 | Notifications (Stage 17): records, email/SMS/push delivery jobs (mock senders), in-app feed (`/notifications`), every business event wired | Done. Email/SMS/push providers are mocks until deployment |
-| Beneficiaries (Stage 18) | Next |
+| Beneficiaries (Stage 18): `/beneficiaries` (saved Fundra and bank recipients) | Done |
+| Admin (Stage 19) | Next |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).

@@ -109,8 +109,8 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Notification records + email/SMS/push jobs (mock senders): one set per event (advisory lock), channels by preference, `send-email/sms/push` (job ID = notification ID, FAILED after the last retry), `requeue-notifications` sweep, in-app feed API; 18 checks with real BullMQ
 - [x] Wire up events: transfers, deposits, withdrawals, logins, KYC, security: every outbox event mapped to finished text per user (transfers and reversals tell both sides; new-device sign-ins only; no second password email; freeze reasons never shown); 10 end-to-end checks + 19 unit tests
 
-### Stage 18 — Beneficiaries
-- [ ] CRUD with ownership checks + audit
+### Stage 18 — Beneficiaries ✅
+- [x] CRUD with ownership checks + audit: Fundra wallets (D2 lookup) and bank accounts (name enquiry); owner-scoped queries (404 otherwise); nickname-only updates (no silent repointing); duplicates, self and a 100 cap refused; masked audit; 19 checks on PostgreSQL 18.3
 
 ### Stage 19 — Admin
 - [ ] Users (view/suspend/reactivate), KYC review (`KycService.startReview/approve/reject` exist), transactions, wallets (`WalletService.freeze/unfreeze/reopen` exist), audit logs, settings

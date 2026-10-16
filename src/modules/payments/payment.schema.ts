@@ -8,7 +8,7 @@ export const createDepositBody = z.strictObject({ amount, currency });
 export type CreateDepositInput = z.output<typeof createDepositBody>;
 
 /** A Nigerian bank account: CBN bank code and 10-digit NUBAN. The bank checks the rest. */
-const bankAccount = {
+export const bankAccount = {
   bankCode: z
     .string()
     .trim()

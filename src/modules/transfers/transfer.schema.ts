@@ -5,7 +5,7 @@ import { handle } from '../users/user.schema.ts';
 import { isValidAccountNumber } from '../wallets/account-number.ts';
 
 /** 10 digits whose check digit matches: a typo is refused before any lookup. */
-const accountNumber = z
+export const accountNumber = z
   .string()
   .trim()
   .regex(/^\d{10}$/, 'Must be a 10-digit account number')

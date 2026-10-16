@@ -20,6 +20,8 @@ import { DepositService } from '../modules/payments/deposit.service.ts';
 import { OutboundPaymentService } from '../modules/payments/outbound-payment.service.ts';
 import { createPaymentRouter } from '../modules/payments/payment.routes.ts';
 import type { PaymentProvider } from '../modules/payments/providers/payment-provider.ts';
+import { createBeneficiaryRouter } from '../modules/beneficiaries/beneficiary.routes.ts';
+import { BeneficiaryService } from '../modules/beneficiaries/beneficiary.service.ts';
 import { createNotificationRouter } from '../modules/notifications/notification.routes.ts';
 import { NotificationFeed } from '../modules/notifications/notification.service.ts';
 import type { MessageSender } from '../modules/notifications/notification.types.ts';
@@ -116,11 +118,21 @@ export function createApiRouter({
     createNotificationRouter({ feed: new NotificationFeed(db), authenticate }),
   );
 
+  const outbound = new OutboundPaymentService(db, paymentProvider, idempotency);
   router.use(
     '/payments',
     createPaymentRouter({
       deposits: new DepositService(db, paymentProvider, idempotency),
-      outbound: new OutboundPaymentService(db, paymentProvider, idempotency),
+      outbound,
+      authenticate,
+      rateLimitStore,
+    }),
+  );
+
+  router.use(
+    '/beneficiaries',
+    createBeneficiaryRouter({
+      beneficiaries: new BeneficiaryService(db, outbound),
       authenticate,
       rateLimitStore,
     }),

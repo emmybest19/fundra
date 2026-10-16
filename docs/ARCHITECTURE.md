@@ -374,6 +374,31 @@ Verified on PostgreSQL 18.3 (PGlite): 26 checks, plus the item 1 suite still pas
 
 ---
 
+### 6.4 Beneficiaries — *Built*
+
+Saved recipients ([beneficiary.service.ts](../src/modules/beneficiaries/beneficiary.service.ts)):
+
+| Concern | Design |
+|---|---|
+| Kinds | A Fundra wallet, found by handle or account number with the transfer lookup's rules (`findRecipientWallet`, D2); or a bank account, through **name enquiry**. Either way the name comes from Fundra or the bank, never from the request |
+| Ownership | Every read and write is scoped to the owner in the query itself; someone else's beneficiary is a plain 404 for get, rename and delete alike |
+| Immutable recipient | Only the nickname can change. A saved recipient that could be quietly repointed is how money gets misdirected (account takeover, or a typo nobody sees), so changing who it is means delete and add again, both audited |
+| Refusals | Yourself → `422 BENEFICIARY_SELF`; the same recipient twice (however it's named) → `409 BENEFICIARY_EXISTS`, from the partial unique indexes; more than 100 → `422 BENEFICIARY_LIMIT`, counted under the owner's row lock so parallel saves can't pass it. Saving needs a verified account and is limited to 30 an hour (it performs lookups) |
+| Views | A Fundra recipient shows name and handle only, as the D2 lookup does, plus `available: false` once they can't receive (closed wallet, account gone). A bank account shows the owner's own saved details in full, so they can use them |
+| Audit | `beneficiary.created` / `updated` / `deleted` by the user, with the bank account number masked. Deleting one unlinks the transfers that used it; their history stays |
+
+Verified on PostgreSQL 18.3 over HTTP: 19 checks covering:
+- saving by handle, by account number and by bank account;
+- the audit, with masking;
+- duplicates both ways, yourself, nobody, no such bank account, name enquiry down, an unverified account, a client-supplied name;
+- list and filter, and another user's 404s for get, rename and delete;
+- rename and clear, and an attempted repoint;
+- a deactivated recipient shown unavailable;
+- delete, then delete again;
+- the 100 cap.
+
+Three deliberate code breaks were each caught: reads not scoped to the owner, the self check removed, and duplicates not mapped to 409.
+
 ## 7. Financial core — *Partly built (posting)*
 
 ### 7.1 Money representation

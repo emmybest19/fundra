@@ -98,6 +98,9 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 403 | `TRANSACTION_SELF_ACTION` | (Admin) You can't reverse a transaction involving your own wallet |
 | 404 | `BANK_ACCOUNT_NOT_FOUND` | The bank has no account with that bank code and number (withdrawals) |
 | 404 | `BILLER_NOT_FOUND` | No biller has that code (bill payments) |
+| 409 | `BENEFICIARY_EXISTS` | That recipient is already saved |
+| 422 | `BENEFICIARY_SELF` | You can't save yourself as a beneficiary |
+| 422 | `BENEFICIARY_LIMIT` | You have the maximum number of beneficiaries (100) |
 | 401 | `INVALID_WEBHOOK_SIGNATURE` | (Payment provider) The webhook's signature is missing or doesn't match its body |
 | 409 | `KYC_TIER_ORDER` | Tiers are taken in order; complete the previous tier first |
 | 409 | `KYC_TIER_ALREADY_APPROVED` | You're already verified at this tier or higher |
@@ -697,6 +700,44 @@ If the biller later gives money back (in full or in part), it arrives as a separ
 | `422 VALIDATION_ERROR` | The customer reference doesn't fit the biller (the message names what's expected) |
 | `422 INSUFFICIENT_FUNDS` / `LIMIT_*` / `WALLET_FROZEN` / `WALLET_CLOSED` | As for withdrawals |
 | `503 SERVICE_UNAVAILABLE` | The provider can't be reached for the catalogue. Nothing was taken; retry with the same key |
+
+### Beneficiaries (saved recipients)
+
+Yours only: anyone else's is `404`. Never cached.
+
+#### `GET /api/v1/beneficiaries?type=FUNDRA_WALLET|BANK_ACCOUNT` · `GET /api/v1/beneficiaries/:id`
+
+Most recently used first.
+
+```json
+{ "data": { "beneficiaries": [
+  { "id": "…", "type": "FUNDRA_WALLET", "nickname": "Bola", "recipient": { "name": "Bola Adeyemi", "handle": "bola" }, "available": true, "lastUsedAt": null, "createdAt": "…" },
+  { "id": "…", "type": "BANK_ACCOUNT", "nickname": "Rent", "bankAccount": { "bankCode": "058", "accountNumber": "0123456789", "accountName": "ADA OKAFOR" }, "lastUsedAt": null, "createdAt": "…" }
+] } }
+```
+
+`available: false` means the Fundra recipient can't receive any more (closed wallet, account gone).
+
+#### `POST /api/v1/beneficiaries`
+
+```json
+{ "type": "FUNDRA_WALLET", "recipientHandle": "bola", "nickname": "Bola" }
+{ "type": "BANK_ACCOUNT", "bankCode": "058", "accountNumber": "0123456789", "nickname": "Rent" }
+```
+
+A Fundra recipient takes exactly one of `recipientHandle` or `recipientAccountNumber` (and `currency`, default `NGN`). A bank account is checked with the bank, which supplies the name. `nickname` is optional, 1–50 characters. Needs a verified account; 30 an hour. **201** with the beneficiary.
+
+| Error | When |
+|---|---|
+| `404 RECIPIENT_NOT_FOUND` / `BANK_ACCOUNT_NOT_FOUND` | Nobody at that handle or account number, or no such bank account |
+| `409 BENEFICIARY_EXISTS` | Already saved |
+| `422 BENEFICIARY_SELF` | That's you |
+| `422 BENEFICIARY_LIMIT` | You have 100 saved; delete one first |
+| `503 SERVICE_UNAVAILABLE` | The bank can't be reached for the name check |
+
+#### `PATCH /api/v1/beneficiaries/:id` · `DELETE /api/v1/beneficiaries/:id`
+
+`PATCH` takes `{ "nickname": "Mum" }` (or `null` to clear) and nothing else: who a beneficiary is can't change. To point at someone else, delete it and add a new one. `DELETE` answers `204`.
 
 ### Notifications (your in-app feed)
 
