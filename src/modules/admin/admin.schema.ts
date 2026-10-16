@@ -1,6 +1,7 @@
 // Zod schemas for admin endpoints.
 import { z } from 'zod';
 import { decodeCursor } from '../../common/utils/cursor.ts';
+import { ROLES } from '../../common/constants/rbac.ts';
 import { amount, currency, uuid } from '../../common/validators/index.ts';
 import { FEE_TYPES } from './admin-settings.service.ts';
 
@@ -108,3 +109,10 @@ export const feeRuleBody = z
     message: 'Must not be more than maxFee',
     path: ['minFee'],
   });
+
+/** Staff roles only; USER is every account's base role. */
+const staffRole = z.enum(ROLES).refine((role) => role !== 'USER', 'USER is not assignable');
+
+export const roleBody = z.strictObject({ role: staffRole });
+
+export const roleParams = z.strictObject({ id: uuid, role: staffRole });

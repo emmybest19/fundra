@@ -112,9 +112,9 @@ Legend: `[x]` done · `[ ]` to do
 ### Stage 18 — Beneficiaries ✅
 - [x] CRUD with ownership checks + audit: Fundra wallets (D2 lookup) and bank accounts (name enquiry); owner-scoped queries (404 otherwise); nickname-only updates (no silent repointing); duplicates, self and a 100 cap refused; masked audit; 19 checks on PostgreSQL 18.3
 
-### Stage 19 — Admin
+### Stage 19 — Admin ✅
 - [x] Users (view/suspend/reactivate), KYC review (`KycService.startReview/approve/reject` exist), transactions, wallets (`WalletService.freeze/unfreeze/reopen` exist), audit logs, settings: `/admin/*` built from one route table (each with its permission); no self-action, staff accounts protected, reactivation reopens wallets; fee history kept; 34 checks on PostgreSQL 18.3
-- [ ] Per-permission protection
+- [x] Per-permission protection: role assignment (`roles:assign`; never yourself, never the last super admin; effective on the next request); every route × every role tested through the real router (176 cases) plus a pinned route → permission spec
 
 ### Stage 20 — Reconciliation & statements
 - [ ] `reconcile-transactions`: wallet cache vs ledger, drift alerts

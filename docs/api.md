@@ -102,6 +102,7 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 422 | `BENEFICIARY_SELF` | You can't save yourself as a beneficiary |
 | 422 | `BENEFICIARY_LIMIT` | You have the maximum number of beneficiaries (100) |
 | 403 | `ADMIN_SELF_ACTION` | (Admin) You can't take this action on your own account |
+| 409 | `LAST_SUPER_ADMIN` | (Admin) The last super admin can't lose the role |
 | 401 | `INVALID_WEBHOOK_SIGNATURE` | (Payment provider) The webhook's signature is missing or doesn't match its body |
 | 409 | `KYC_TIER_ORDER` | Tiers are taken in order; complete the previous tier first |
 | 409 | `KYC_TIER_ALREADY_APPROVED` | You're already verified at this tier or higher |
@@ -775,11 +776,14 @@ Staff only: each route needs one permission (see [ROLE_PERMISSIONS](../src/commo
 | `POST /admin/wallets/:id/reopen` | `wallets:freeze` | |
 | `GET /admin/webhooks` | `webhooks:read` | `status` |
 | `GET /admin/audit-logs` | `audit_logs:read` | `actorUserId`, `action`, `resourceType`, `resourceId`, `from`, `to` |
+| `GET /admin/roles` | `roles:assign` | |
+| `POST /admin/users/:id/roles` | `roles:assign` | `{ "role": "COMPLIANCE" }` (any role but `USER`) |
+| `DELETE /admin/users/:id/roles/:role` | `roles:assign` | |
 | `GET /admin/settings` | `settings:read` | |
 | `PUT /admin/settings/tier-limits/:tier/:currency` | `settings:update` | `{ "perTransactionLimit": "5000000", "dailyOutflowLimit": "5000000", "maxBalance": null }` |
 | `PUT /admin/settings/fee-rules/:transactionType/:currency` | `settings:update` | `{ "flatFee": "1000", "percentageBps": 0, "minFee": null, "maxFee": null }` |
 
-`403 ADMIN_SELF_ACTION`: you can't suspend or reactivate your own account. Suspending a staff account needs `roles:assign`.
+`403 ADMIN_SELF_ACTION`: you can't suspend, reactivate or change the roles of your own account. Suspending a staff account needs `roles:assign`. `409 LAST_SUPER_ADMIN`: the last super admin keeps the role. Role changes apply to the holder's next request.
 
 ### Webhooks (from the payment provider)
 

@@ -15,12 +15,15 @@ import {
   idParams,
   kycQueueQuery,
   reasonBody,
+  roleBody,
+  roleParams,
   tierLimitBody,
   tierLimitParams,
   transactionsQuery,
   usersQuery,
   webhooksQuery,
 } from './admin.schema.ts';
+import type { AdminRoleService } from './admin-roles.service.ts';
 import type { AdminSettingsService } from './admin-settings.service.ts';
 import type { AdminService } from './admin.service.ts';
 
@@ -37,6 +40,7 @@ export interface AdminControllerDependencies {
   kyc: KycService;
   wallets: WalletService;
   reversals: TransferReversalService;
+  roles: AdminRoleService;
 }
 
 export function createAdminController({
@@ -45,6 +49,7 @@ export function createAdminController({
   kyc,
   wallets,
   reversals,
+  roles,
 }: AdminControllerDependencies) {
   const adminId = (req: Request) => authOf(req).userId;
 
@@ -168,6 +173,20 @@ export function createAdminController({
     listAuditLogs: validated({ query: auditQuery }, async ({ query }, _req, res) => {
       const result = await admin.listAuditLogs(query);
       send(res, { auditLogs: result.items }, { limit: query.limit, nextCursor: result.nextCursor });
+    }),
+
+    // Roles
+    listRoles: async (_req: Request, res: Response) => {
+      send(res, { roles: await roles.list() });
+    },
+    grantRole: validated(
+      { params: idParams, body: roleBody },
+      async ({ params, body }, req, res) => {
+        send(res, await roles.grant(params.id, body.role, adminId(req), auditContextFrom(req)));
+      },
+    ),
+    revokeRole: validated({ params: roleParams }, async ({ params }, req, res) => {
+      send(res, await roles.revoke(params.id, params.role, adminId(req), auditContextFrom(req)));
     }),
 
     // Settings

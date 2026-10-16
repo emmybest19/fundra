@@ -124,7 +124,8 @@ docs/              project definition, architecture, case study, API, security
 | Background jobs (Stage 16): queues + worker process (`npm run start:worker`) | Done (queues, worker, outbox relay, `expire-otp`). Not yet run against a real Redis, which needs Redis installed |
 | Notifications (Stage 17): records, email/SMS/push delivery jobs (mock senders), in-app feed (`/notifications`), every business event wired | Done. Email/SMS/push providers are mocks until deployment |
 | Beneficiaries (Stage 18): `/beneficiaries` (saved Fundra and bank recipients) | Done |
-| Admin (Stage 19): `/admin/*` (users, KYC review, transactions and reversals, wallets, webhooks, audit trail, settings) | In progress (item 1 of 2 done; role assignment and the permission matrix next) |
+| Admin (Stage 19): `/admin/*` (users, KYC review, transactions and reversals, wallets, webhooks, audit trail, settings) | Done, including role assignment; every route is tested against every role |
+| Reconciliation & statements (Stage 20) | Next |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).

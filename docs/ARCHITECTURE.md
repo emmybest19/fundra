@@ -410,6 +410,7 @@ Three deliberate code breaks were each caught: reads not scoped to the owner, th
 | Transactions | list (user, wallet, reference, type, status, dates), detail with ledger entries, hold, provider details (account masked), reversal and webhooks (`transactions:read`); reverse (`transactions:reverse`) | Reversal is §8.1's service: no self-action, never an overdraft |
 | Wallets | detail (`wallets:read`); freeze, unfreeze, reopen (`wallets:freeze`) | The wallet service's lifecycle and self-action rules |
 | Webhooks, audit | stored webhook events with payloads (`webhooks:read`); the audit trail by actor, action, resource and dates (`audit_logs:read`) | Cursor-paged, newest first |
+| Roles | list roles with permissions and holders, grant, revoke (`roles:assign`: SUPER_ADMIN) | Staff roles only (USER is every account's base role). Not your own roles; no duplicates; never the last super admin (`409 LAST_SUPER_ADMIN`, checked under a lock on the role's holders). Roles are read on every request, so a grant or revoke applies to the next call with the same token. Who granted is recorded, and both are audited |
 | Settings | tier limits and active fee rules (`settings:read`); update a tier's limits, set a fee (`settings:update`) | Applies to the very next transaction (read every time). A fee change retires the active rule and creates a new one, so past fees stay explainable. Audited with before and after |
 
 Verified on PostgreSQL 18.3 over HTTP with staff in each role (SUPPORT, COMPLIANCE, FINANCE, SUPER_ADMIN) and customers, in 34 checks covering:
@@ -424,6 +425,12 @@ Verified on PostgreSQL 18.3 over HTTP with staff in each role (SUPPORT, COMPLIAN
 - customers and anonymous callers refused.
 
 Three deliberate code breaks were each caught: the self check removed, wallets not reopened, and the router skipping `authorize`.
+
+**Per-permission protection, proven.** Two tests guard it:
+- The [permission matrix](../tests/unit/admin/permission-matrix.test.ts) sends every admin route through the real router and `authorize` for every role (176 cases). A role holding the route's permission is never refused, and every other role gets `403 FORBIDDEN`; no roles is 403, no token 401, and an unverified staff account `403 ACCOUNT_NOT_ACTIVE`.
+- A pinned table states exactly which permission each route needs, so changing a guard has to be a deliberate edit of the specification. It also checks that SUPER_ADMIN alone reaches everything, customers reach nothing, and no role other than SUPER_ADMIN can both decide KYC and reverse money.
+
+Role assignment was verified on PostgreSQL 18.3 in 9 checks (immediate effect on grant and revoke with the same token, audit and granter, all refusals, the last super admin). Code breaks caught: a route class left unguarded, a guard weakened to a read permission, the self check removed, and the last-super-admin check removed.
 
 ## 7. Financial core — *Partly built (posting)*
 

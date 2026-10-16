@@ -11,7 +11,7 @@ import {
 } from './admin.controller.ts';
 
 export interface AdminRoute {
-  method: 'get' | 'post' | 'put';
+  method: 'get' | 'post' | 'put' | 'delete';
   path: string;
   permission: Permission;
   handler: keyof AdminController;
@@ -80,6 +80,15 @@ export const ADMIN_ROUTES: readonly AdminRoute[] = [
 
   { method: 'get', path: '/webhooks', permission: 'webhooks:read', handler: 'listWebhooks' },
   { method: 'get', path: '/audit-logs', permission: 'audit_logs:read', handler: 'listAuditLogs' },
+
+  { method: 'get', path: '/roles', permission: 'roles:assign', handler: 'listRoles' },
+  { method: 'post', path: '/users/:id/roles', permission: 'roles:assign', handler: 'grantRole' },
+  {
+    method: 'delete',
+    path: '/users/:id/roles/:role',
+    permission: 'roles:assign',
+    handler: 'revokeRole',
+  },
 
   { method: 'get', path: '/settings', permission: 'settings:read', handler: 'getSettings' },
   {

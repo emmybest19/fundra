@@ -69,6 +69,7 @@ export const ErrorCode = {
 
   // Admin (src/modules/admin)
   ADMIN_SELF_ACTION: 'ADMIN_SELF_ACTION',
+  LAST_SUPER_ADMIN: 'LAST_SUPER_ADMIN',
 
   // Webhooks (src/modules/webhooks)
   INVALID_WEBHOOK_SIGNATURE: 'INVALID_WEBHOOK_SIGNATURE',
