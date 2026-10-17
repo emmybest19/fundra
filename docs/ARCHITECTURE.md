@@ -1072,12 +1072,18 @@ A required concurrency test fires N parallel transfers at one wallet and asserts
 
 | Layer | What it proves | How it runs |
 |---|---|---|
-| Unit (`tests/unit`, 849 tests) | Rules, schemas, routers, the admin permission matrix (every route × every role), OpenAPI coverage of every mounted route | Vitest; no database |
+| Unit (`tests/unit`) | Rules, schemas, routers, the admin permission matrix (every route × every role), OpenAPI coverage of every mounted route | Vitest; no database |
 | End to end (`tests/e2e`) | The customer journey through the HTTP API: register → verify → KYC → deposit (signed webhook) → transfer (and its idempotent replay) → withdrawal (name enquiry, hold, payout webhook) → both histories with running balances → notifications in app and by email → a CSV statement → reconciliation clean | The real app on PGlite (PostgreSQL 18 in process: every migration, the real seed). Queues record jobs and the test drains them through the real worker handlers, as the worker process would |
 | Database checks (development) | Each item's behaviour on PostgreSQL 18.3, with deliberate code breaks to prove the checks bite | Scripts against PGlite, run per item (not in the repo) |
 | Integration (`tests/integration`) | Real PostgreSQL and Redis servers, real concurrency, BullMQ on Redis | Testcontainers: waits for Docker |
 
+Two more e2e files cover what the database checks proved during development, so it now lives in the repo:
+- **Account security:** refresh rotation and reuse detection, devices, lockout, password reset and change, contact change, profile and preferences, deactivation and its refusal.
+- **Operations:** KYC Tier 2 and 3 through compliance review and a rejection; self-review refused; suspend and reactivate; role grant and revoke; reversal, freeze, a live fee change and tier limits; audit, webhooks and reconciliation; a bill payment and a refund delivered twice; a payout rejected later releasing its hold; beneficiaries; and a tampered or duplicate webhook.
+
 The e2e journey caught a deliberate break (deposits never credited) in 6 of its 8 steps.
+
+**Coverage** (`npm run test:coverage`, 876 tests): lines **87%**, statements 84%, functions 88%, branches 73%, up from 68% / 66% before the e2e files. `vitest.config.ts` enforces a floor just under that (85 / 82 / 85 / 70), so coverage can rise but not quietly fall. What's left is mostly process wiring that only a running process exercises: the server and worker entry points, the live Redis client, and signal handling. The Docker integration suite will cover it. E2e files run one at a time: each starts its own WebAssembly PostgreSQL, and several at once starve each other of CPU.
 
 ## 13. Known debt and current gaps
 
@@ -1092,6 +1098,7 @@ This reflects the repository as it stands, not the design.
 | BullMQ hasn't run against a real Redis server | Its connection is pinned to RESP2 (ioredis 6 defaults to RESP3), and the job code was verified with real BullMQ on its PostgreSQL backend. Running the worker on Redis 8 waits for Redis to be installed (Docker; Stage 6) |
 | Graceful shutdown → `disconnectDatabase()` hasn't been exercised end-to-end | Windows can't deliver SIGTERM to a Node process. The cleanup hook ordering is unit-tested; a real SIGTERM test runs once the app is in Docker (Stage 23) |
 | The init migration has only been run on PGlite (in-process PostgreSQL 18.3), not on the Docker database, and `prisma migrate` drift detection hasn't run (it needs a shadow database) | Low risk, same engine version, but `npm run db:migrate` against Docker is still the real test |
+| The database checks for later stages lived in throwaway scripts | Their scenarios now run in the repo as e2e tests on in-process PostgreSQL (account security, operations, the money journey). The 49 migration checks (constraints and triggers) still wait for the Stage 6 integration suite |
 | The 49 migration checks (30 constraints + 19 triggers) live in throwaway scripts | They need porting to `tests/integration` with Testcontainers (Stage 6) to keep guarding future migrations |
 | Ledger triggers can be disabled by a database superuser | They protect against application bugs, not a compromised DBA account. The app must run as a non-owner role (Stage 25) |
 | A native PostgreSQL 16 Windows service (`postgresql-x64-16`) occupies port 5432 on the development machine, listening on all interfaces | Fundra's Docker database uses **5433** instead. That service is outside this project, but it's reachable from the local network |

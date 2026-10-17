@@ -124,9 +124,9 @@ Legend: `[x]` done · `[ ]` to do
 - [x] OpenAPI generated from Zod + Swagger UI: `/api/v1/openapi.json` (3.1, from the routes' own Zod schemas; admin entries from `ADMIN_ROUTES`), Swagger UI at `/docs/` served from `swagger-ui-dist` 5.33.1 (no CDN, CSP unchanged); a test fails if any mounted route is undocumented
 - [x] Fill in [api.md](api.md): every endpoint, plus pagination, rate limits, health and a pointer to the spec
 
-### Stage 22 — End-to-end testing
+### Stage 22 — End-to-end testing ✅
 - [x] E2E: register → KYC → fund → transfer → withdraw → history: through the HTTP API on in-process PostgreSQL 18 (PGlite 0.5.8, dev dependency; all migrations, real seed), worker jobs drained through the real handlers; also notifications, a statement and reconciliation; no Docker needed
-- [ ] Coverage report; close the gaps
+- [x] Coverage report; close the gaps: two more e2e files (account security; KYC review, admin and payment edge cases) bring lines from 68% to 87% (876 tests); `vitest.config.ts` enforces a floor (lines 85, statements 82, functions 85, branches 70); e2e files run one at a time
 
 ### Stage 23 — Containerise the app
 - [ ] Multi-stage `Dockerfile` (API + worker)

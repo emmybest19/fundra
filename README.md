@@ -127,7 +127,8 @@ docs/              project definition, architecture, case study, API, security
 | Admin (Stage 19): `/admin/*` (users, KYC review, transactions and reversals, wallets, webhooks, audit trail, settings) | Done, including role assignment; every route is tested against every role |
 | Reconciliation & statements (Stage 20): hourly and on-demand reconciliation, CSV statements (`/statements`) | Done |
 | API docs (Stage 21): OpenAPI 3.1 at `/api/v1/openapi.json`, Swagger UI at `/docs/`, [api.md](docs/api.md) | Done |
-| End-to-end testing (Stage 22): the customer journey on in-process PostgreSQL | In progress (journey done; coverage next) |
+| End-to-end testing (Stage 22): the customer journey, account security and operations on in-process PostgreSQL; coverage 87% of lines, enforced | Done |
+| Containerise the app (Stage 23) | Next: needs Docker installed |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).

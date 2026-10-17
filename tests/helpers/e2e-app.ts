@@ -9,13 +9,13 @@ import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { PGLiteSocketServer } from '@electric-sql/pglite-socket';
 import type { Express } from 'express';
+import request from 'supertest';
 import { seed } from '../../prisma/seed.ts';
 import { createApp } from '../../src/app.ts';
 import { createPrismaClient } from '../../src/config/database.ts';
 import { createLogger } from '../../src/config/logger.ts';
 import type { PrismaClient } from '../../src/generated/prisma/client.ts';
 import { createJobHandlers, type JobHandlers } from '../../src/jobs/workers.ts';
-import { MemoryRateLimitStore } from '../../src/middleware/rate-limit.middleware.ts';
 import { MemoryOtpStore } from '../../src/modules/auth/otp.ts';
 import { HealthService } from '../../src/modules/health/health.service.ts';
 import { MemoryDocumentStorage } from '../../src/modules/kyc/document-storage.ts';
@@ -62,6 +62,20 @@ function freePort(): Promise<number> {
   });
 }
 
+export interface Customer {
+  id: string;
+  handle: string;
+  email: string;
+  phone: string;
+  password: string;
+  token: string;
+  refreshToken: string;
+  walletId: string;
+  accountNumber: string;
+}
+
+type Method = 'get' | 'post' | 'put' | 'patch' | 'delete';
+
 export interface E2e {
   app: Express;
   db: PrismaClient;
@@ -72,6 +86,25 @@ export interface E2e {
   channels: MemoryChannelSenders;
   /** Runs every queued job, and the outbox relay, until nothing is left (a worker tick). */
   drain(): Promise<void>;
+  /** A request to `/api/v1<path>`, signed in as `who` if given. */
+  api(method: Method, path: string, who?: Customer): request.Test;
+  /** A verified customer (email and phone), with KYC Tier 1 (a wallet) unless told otherwise. */
+  signUp(
+    name: string,
+    options?: { tier1?: boolean; role?: string; verify?: boolean },
+  ): Promise<Customer>;
+  /** Posts the provider's signed webhook for a payment, then runs the worker's jobs. */
+  settle(
+    transactionId: string,
+    overrides?: { outcome?: 'SUCCEEDED' | 'FAILED'; amount?: bigint },
+  ): Promise<request.Response>;
+  /** Posts any signed webhook (e.g. a refund) and runs the worker's jobs. */
+  deliver(webhook: {
+    rawBody: Buffer;
+    headers: Record<string, unknown>;
+  }): Promise<request.Response>;
+  /** Deposits and completes it: the wallet ends `amount` kobo richer. */
+  fund(who: Customer, amount: bigint): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -116,7 +149,8 @@ export async function startE2e(): Promise<E2e> {
   const app = createApp({
     db,
     health: new HealthService([]),
-    rateLimitStore: new MemoryRateLimitStore(),
+    // Never throttles: a journey makes many calls from one IP, and rate limits have their own tests.
+    rateLimitStore: { hit: () => Promise.resolve({ count: 1, resetMs: 60_000 }) },
     otpStore: new MemoryOtpStore(),
     messageSender: messages,
     kycProvider: new MockKycProvider(),
@@ -148,6 +182,95 @@ export async function startE2e(): Promise<E2e> {
     throw new Error('Jobs kept producing jobs: drain gave up after 50 rounds');
   }
 
+  let phones = 0;
+  const run = Math.random().toString(36).slice(2, 6);
+  const api = (method: Method, path: string, who?: Customer) => {
+    const req = request(app)[method](`/api/v1${path}`);
+    return who === undefined ? req : req.set('Authorization', `Bearer ${who.token}`);
+  };
+
+  async function signUp(
+    name: string,
+    options: { tier1?: boolean; role?: string; verify?: boolean } = {},
+  ): Promise<Customer> {
+    const handle = `${name}_${run}`;
+    const email = `${handle}@fundra.dev`;
+    const password = 'purple elephant 42 tall';
+    phones += 1;
+    const reg = await api('post', '/auth/register').send({
+      email,
+      phone: `0803${String(1_000_000 + phones)}`,
+      handle,
+      firstName: name.charAt(0).toUpperCase() + name.slice(1),
+      lastName: 'Test',
+      password,
+    });
+    if (reg.status !== 201) throw new Error(`register failed: ${JSON.stringify(reg.body)}`);
+    const user = (reg.body as { data: { user: { id: string; phone: string } } }).data.user;
+    if (options.role !== undefined) {
+      const role = await db.role.findUniqueOrThrow({ where: { name: options.role } });
+      await db.userRole.create({ data: { userId: user.id, roleId: role.id } });
+    }
+    const login = await api('post', '/auth/login').send({ identifier: email, password });
+    const tokens = (login.body as { data: { accessToken: string; refreshToken: string } }).data;
+    const customer: Customer = {
+      id: user.id,
+      handle,
+      email,
+      phone: user.phone,
+      password,
+      token: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      walletId: '',
+      accountNumber: '',
+    };
+    if (options.verify !== false) {
+      for (const [channel, to] of [
+        ['email', email],
+        ['phone', user.phone],
+      ] as const) {
+        await api('post', `/auth/verify/${channel}/request`, customer);
+        const confirmed = await api('post', `/auth/verify/${channel}/confirm`, customer).send({
+          code: messages.lastCodeTo(to),
+        });
+        if (confirmed.status !== 200) {
+          throw new Error(`verify ${channel} failed: ${JSON.stringify(confirmed.body)}`);
+        }
+      }
+    }
+    if (options.tier1 !== false && options.verify !== false) {
+      const tier1 = await api('post', '/kyc/tier-1', customer).send({ dateOfBirth: '1990-01-01' });
+      if (tier1.status !== 200) throw new Error(`KYC Tier 1 failed: ${JSON.stringify(tier1.body)}`);
+      const wallet = await db.wallet.findFirstOrThrow({ where: { userId: user.id } });
+      customer.walletId = wallet.id;
+      customer.accountNumber = wallet.accountNumber;
+    }
+    return customer;
+  }
+
+  async function deliver(webhook: { rawBody: Buffer; headers: Record<string, unknown> }) {
+    let req = request(app).post('/api/v1/webhooks/payments');
+    for (const [name, value] of Object.entries(webhook.headers)) req = req.set(name, String(value));
+    const res = await req.send(webhook.rawBody.toString('utf8'));
+    await drain();
+    return res;
+  }
+
+  async function settle(
+    transactionId: string,
+    overrides: { outcome?: 'SUCCEEDED' | 'FAILED'; amount?: bigint } = {},
+  ) {
+    const payment = await db.payment.findUniqueOrThrow({ where: { transactionId } });
+    return deliver(provider.settle(payment.providerReference ?? '', overrides));
+  }
+
+  async function fund(who: Customer, amount: bigint) {
+    const res = await api('post', '/payments/deposits', who)
+      .set('Idempotency-Key', crypto.randomUUID())
+      .send({ amount: amount.toString(), currency: 'NGN' });
+    await settle((res.body as { data: { deposit: { id: string } } }).data.deposit.id);
+  }
+
   return {
     app,
     db,
@@ -155,6 +278,11 @@ export async function startE2e(): Promise<E2e> {
     messages,
     channels,
     drain,
+    api,
+    signUp,
+    settle,
+    deliver,
+    fund,
     close: async () => {
       await db.$disconnect();
       await server.stop();

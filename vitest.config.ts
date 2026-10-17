@@ -46,6 +46,9 @@ export default defineConfig({
           include: ['tests/e2e/**/*.test.ts'],
           testTimeout: 30_000,
           hookTimeout: 120_000,
+          // One file at a time: each starts its own in-process PostgreSQL (WebAssembly), and
+          // several at once starve each other (and the unit tests) of CPU.
+          fileParallelism: false,
         },
       },
     ],
@@ -56,6 +59,10 @@ export default defineConfig({
       exclude: ['src/generated/**'],
       reporter: ['text', 'html', 'lcov'],
       reportsDirectory: 'coverage',
+      // A floor just under today's numbers (lines 87%, statements 84%): coverage can rise, not
+      // quietly fall. Most of what's left is process wiring (server and worker entry points,
+      // the live Redis client, signal handling) that the Docker integration suite will run.
+      thresholds: { lines: 85, statements: 82, functions: 85, branches: 70 },
     },
   },
 });
