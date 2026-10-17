@@ -131,7 +131,7 @@ docs/              project definition, architecture, case study, API, security
 | Containerise the app (Stage 23): multi-stage `Dockerfile` (API, worker, migrate), compose profile `app` | Done: built and started in CI on every push |
 | CI (Stage 24): GitHub Actions on every push and pull request (format, lint, typecheck, unit + e2e with the coverage floor, build, Docker image) | Done |
 | Deployment (Stage 25): the app's least-privilege database role (`prisma/sql/app-role.sql`) | Partly done: the role is built and tested; AWS hosting and production secrets wait for your cloud account |
-| Final documentation (Stage 26) | Next |
+| Final documentation (Stage 26): [security](docs/security.md), [performance](docs/PERFORMANCE.md), [lessons learnt](docs/LESSONS-LEARNT.md), [case study results](docs/CASE_STUDY.md#8-results) | Done |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).
@@ -152,6 +152,19 @@ npm install
 ```
 
 `npm install` runs the install scripts approved in `package.json` (`allowScripts`) for argon2 and Prisma.
+
+**First run, in order** (needs Docker Desktop for PostgreSQL and Redis):
+
+1. Create `.env` with the variables marked **yes** in [Environment variables](#environment-variables), plus `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` and `REDIS_PASSWORD` for Docker. Point `DATABASE_URL` and `REDIS_URL` at those (`localhost`).
+2. `docker compose up -d`: start PostgreSQL and Redis.
+3. `npm run db:deploy`: create the schema.
+4. `npm run db:seed`: roles, limits, fees, the mock provider and the system ledger accounts.
+5. `npm run dev` and, in a second terminal, `npm run dev:worker`.
+6. Open <http://localhost:3000/docs/> and register through Swagger UI.
+
+**Known gap:** a locally running server can't complete email and phone verification yet. One-time codes go to an in-memory sender with no real delivery and no way to read them, so a new account stays unverified and can't move money. The tests read that sender directly; see `tests/helpers/e2e-app.ts` and `tests/e2e/money-journey.test.ts` for the full journey. Real email/SMS delivery (Stage 25) closes this.
+
+No Docker? The test suites still run (`npm test`, `npm run test:e2e`): the e2e tests start their own PostgreSQL in process.
 
 Start PostgreSQL and Redis (requires Docker Desktop):
 

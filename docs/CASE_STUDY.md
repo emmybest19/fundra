@@ -34,7 +34,7 @@ A detail that is easy to miss: a deposit can't credit a wallet "from nowhere". T
 - fee revenue
 - a suspense account for money that can't yet be attributed
 
-From the platform's point of view, a user's balance is a **liability**: money Fundra owes them. Getting that framing right is what makes deposits, withdrawals and fees balance naturally (see [ARCHITECTURE.md §7](ARCHITECTURE.md#7-financial-core--designed)).
+From the platform's point of view, a user's balance is a **liability**: money Fundra owes them. Getting that framing right is what makes deposits, withdrawals and fees balance naturally (see [ARCHITECTURE.md §7](ARCHITECTURE.md#7-financial-core--built)).
 
 Entries are **immutable**. A refund or reversal is a new, opposite posting linked to the original, never an edit. The database enforces this with triggers, not just application code. That way the rule still holds if the application has a bug.
 
@@ -164,20 +164,32 @@ These are designed in [ARCHITECTURE.md](ARCHITECTURE.md) and will be proven by t
 
 ## 7. What to improve next
 
-Immediate (project initialization and configuration):
-1. Install Docker and add a `docker-compose.yml` for PostgreSQL and Redis. Nothing that touches data can be tested until this exists.
-2. ~~Add `tsconfig.json` (strict), fix the `package.json` `main`/`type` fields, and add `dev`/`build`/`start` scripts.~~ Done. `lint` and `test` scripts arrive with their tools.
-3. ~~Configure Prisma 7 (`prisma.config.ts`, datasource, generator).~~ Done in Stage 5 (see §5.5).
-4. ~~Install ESLint, Prettier, Vitest and Supertest, so tests are written alongside each module rather than at step 23.~~ Done in Stage 3. Testcontainers follows in Stage 6.
-5. ~~Resolve the open decisions D1–D6 before the database design.~~ Done in Stage 1 ([ARCHITECTURE.md §14](ARCHITECTURE.md#14-decisions)).
-
-Later:
-- Prove the concurrency design with a parallel-transfer test before building anything on top of the ledger.
-- Revisit TypeScript 7 once `typescript-eslint` supports it.
-- Re-run `npm audit` after Prisma 7 updates to see whether the development-tool advisories clear.
+1. **Run on real servers.** Install Docker and add the Testcontainers integration suite: real PostgreSQL and Redis, the parallel-debit and simultaneous-webhook tests that PGlite can't show, and the 49 migration checks moved into the repo. This is the biggest gap ([LESSONS-LEARNT](LESSONS-LEARNT.md#is-the-unpaid-trade-off-still-paying-off)).
+2. **Measure on real infrastructure.** Load-test the Docker stack (`autocannon`), starting with the transfer's tail latency ([PERFORMANCE](PERFORMANCE.md)).
+3. **Deploy** (Stage 25): hosting, managed PostgreSQL and Redis, S3 for KYC documents and statements, response compression at the proxy, the `fundra_app` database role, secrets from a manager.
+4. **Replace the mocks:** a sandbox payment provider (Paystack or Flutterwave), real email and SMS, push with device registration.
+5. **Operations tooling:** an admin queue for payments held for review, expiry of abandoned deposits, secret rotation with key IDs, TOTP for staff accounts.
+6. **Upgrades waiting on others:** TypeScript 7 once `typescript-eslint` supports it; `pg` 9 once Prisma stops overlapping in-transaction queries.
 
 ---
 
 ## 8. Results
 
-*To be written as the system is built: test coverage, concurrency test results, measured latencies and a reconciliation report.* No results are claimed until they can be measured.
+As of 2026-10-17, from the repository and its CI:
+
+| Measure | Result |
+|---|---|
+| Scope | 26 roadmap stages planned; 24 complete. Stage 25 (deployment) is partly done (the least-privilege database role) and waits on a cloud account; Stage 26 is this documentation |
+| Code | 14,364 lines of TypeScript in `src/` (generated client excluded), 7,238 in `tests/`, 75 commits |
+| Tests | **885 passing**: 849 unit tests and 36 end-to-end tests that run the real app over HTTP on PostgreSQL 18 (in process) |
+| Coverage | Lines **87%**, statements 84%, functions 88%, branches 73%, with a floor enforced in CI |
+| Authorization | Every admin route tested against every role: 176 cases, plus a pinned route → permission specification |
+| Database checks | Each stage verified against PostgreSQL 18.3 with deliberate code breaks (three per item, each caught) before it was committed |
+| CI | GitHub Actions on every push: format, lint, typecheck, unit + e2e with the coverage floor, build, and a Docker job that builds the image, starts it and checks liveness. The first run passed |
+| Books | The e2e journey (register → KYC → deposit → transfer → withdrawal → statement) ends with reconciliation reporting **no drift** and Σ debits = Σ credits |
+| Latency | Measured locally on in-process PostgreSQL: login p50 66 ms (argon2), transfer p50 77 ms, history page p50 30 ms. Not production numbers ([PERFORMANCE](PERFORMANCE.md)) |
+| Not yet shown | Behaviour under real concurrency, on real PostgreSQL and Redis servers, and in a deployed environment |
+
+The questions this project set out to answer (§1) all have tested answers in the repo, except one. Two transfers racing for the last naira are serialised by row locks and checked by constraints and triggers, but that answer hasn't been measured on a real server yet.
+
+What went wrong along the way, and what it taught, is in [LESSONS-LEARNT](LESSONS-LEARNT.md).

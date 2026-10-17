@@ -140,7 +140,7 @@ Legend: `[x]` done · `[ ]` to do
 - [ ] Production config + secrets. **Deferred with the item above** (the env contract is ready: README's variable table; secrets never in the image)
 - [x] App connects as a non-owner DB role (no `TRUNCATE`/`ALTER`), so ledger triggers can't be disabled from the app: [prisma/sql/app-role.sql](../prisma/sql/app-role.sql) creates `fundra_app` (owns nothing; insert-and-read only on the append-only tables); an e2e suite runs the whole money flow as that role and proves TRUNCATE, DISABLE TRIGGER, DELETE/UPDATE on the ledger, editing the audit trail, DROP and ALTER are all refused
 
-### Stage 26 — Final documentation
+### Stage 26 — Final documentation ✅
 - [x] Fill in [security.md](security.md): threat model, authentication, authorization, money integrity, webhooks, personal data, HTTP hardening, supply chain and known gaps, each pointing at the code or test that enforces it
-- [ ] PERFORMANCE.md (measured), LESSONS-LEARNT.md
-- [ ] Case study results + README setup instructions
+- [x] PERFORMANCE.md (measured), LESSONS-LEARNT.md: latencies measured on 2026-10-17 over real HTTP (in-process PostgreSQL, clearly labelled not production), indexes, ranked bottlenecks, what was not optimised; ten real lessons with their principles
+- [x] Case study results + README setup instructions: measured results table and an updated improvement plan; an ordered first-run sequence, including the local verification gap

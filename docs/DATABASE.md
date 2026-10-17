@@ -1,6 +1,6 @@
 # Fundra — Database Design
 
-> The PostgreSQL schema: every table, column, key, index and constraint, and why it exists. Written for developers implementing the Prisma schema and migrations (Stage 5) and for reviewers checking the financial model. The ledger concepts behind it are in [ARCHITECTURE.md §7](ARCHITECTURE.md#7-financial-core--designed).
+> The PostgreSQL schema: every table, column, key, index and constraint, and why it exists. Written for developers implementing the Prisma schema and migrations (Stage 5) and for reviewers checking the financial model. The ledger concepts behind it are in [ARCHITECTURE.md §7](ARCHITECTURE.md#7-financial-core--built).
 
 **Status: Implemented as schema + migration (2026-10-01).** All 26 tables are in [prisma/schema.prisma](../prisma/schema.prisma) and the first migration (`prisma/migrations/*_init`). The ledger integrity triggers are in a second migration (`*_ledger_integrity_triggers`), a third (`*_append_only_error_code`) gives append-only violations their own SQLSTATE, and a fourth (`*_idempotency_claimed_at`) adds the idempotency fencing column. All four were verified on PostgreSQL 18.3 (PGlite), not yet on the Docker database.
 

@@ -432,7 +432,7 @@ Three deliberate code breaks were each caught: the self check removed, wallets n
 
 Role assignment was verified on PostgreSQL 18.3 in 9 checks (immediate effect on grant and revoke with the same token, audit and granter, all refusals, the last super admin). Code breaks caught: a route class left unguarded, a guard weakened to a read permission, the self check removed, and the last-super-admin check removed.
 
-## 7. Financial core — *Partly built (posting)*
+## 7. Financial core — *Built*
 
 ### 7.1 Money representation
 
@@ -1107,6 +1107,7 @@ This reflects the repository as it stands, not the design.
 | `swagger-ui-dist` depends on `@scarf/scarf`, an install-time usage-telemetry package | npm's install-script approval blocked its postinstall, so nothing reports. Keep it unapproved |
 | The mock payment provider keeps its state in memory per process | The worker only uses its stateless parts (webhook parsing). A real provider holds that state itself |
 | "At once" webhook checks run one after another on PGlite | PGlite's socket server mis-routes responses when concurrent statements fail (a test-server limit, probed). Simultaneous identical deliveries need real PostgreSQL (Docker): same deferral as the Stage 11 parallel-debit test. The unique index and the row locks are what make them safe |
+| A locally running server can't complete verification | One-time codes go to MemoryMessageSender with no delivery and nothing to read them, so a person using a local server can't verify and therefore can't move money. Tests read the sender directly. Real email/SMS delivery fixes it; logging codes in development was rejected (codes must never be logged) |
 | Email, SMS and push are in-memory mocks | Notifications are recorded, queued and "delivered" to in-memory senders. Real providers (and push device registration) come with deployment (Stage 25) |
 | Withdrawals whose payout couldn't be sent stay held until `dispatch()` runs again | The money is safe (held, not lost), but nothing retries it automatically until the background jobs (Stage 16) |
 | Deposits held for review, and abandoned checkouts, stay `PROCESSING` | Resolving held deposits is an admin action (Stage 19). Expiring abandoned ones (ask `getPaymentStatus`, then fail them) belongs to the `reconcile-transactions` job |
