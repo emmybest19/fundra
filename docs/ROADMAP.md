@@ -129,7 +129,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Coverage report; close the gaps: two more e2e files (account security; KYC review, admin and payment edge cases) bring lines from 68% to 87% (876 tests); `vitest.config.ts` enforces a floor (lines 85, statements 82, functions 85, branches 70); e2e files run one at a time
 
 ### Stage 23 — Containerise the app
-- [x] Multi-stage `Dockerfile` (API + worker): deps → build → prod-deps (`--omit=dev --ignore-scripts`) → runtime (non-root, liveness healthcheck), plus a `migrate` target; Debian slim for argon2's glibc prebuild. **Not built locally (no Docker here); CI builds it (Stage 24)**
+- [x] Multi-stage `Dockerfile` (API + worker): deps → build → prod-deps (`--omit=dev --ignore-scripts`) → runtime (non-root, liveness healthcheck), plus a `migrate` target; Debian slim for argon2's glibc prebuild. **Built and started in CI** (the first run passed: image builds, the container answers liveness, compose validates); not yet run against real PostgreSQL and Redis
 - [x] Add api + worker to `docker-compose.yml`: profile `app` (migrate once, then api and worker; shared storage volume; URLs point at the services). Plain `docker compose up -d` still starts only the databases
 
 ### Stage 24 — CI ✅

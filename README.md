@@ -128,7 +128,7 @@ docs/              project definition, architecture, case study, API, security
 | Reconciliation & statements (Stage 20): hourly and on-demand reconciliation, CSV statements (`/statements`) | Done |
 | API docs (Stage 21): OpenAPI 3.1 at `/api/v1/openapi.json`, Swagger UI at `/docs/`, [api.md](docs/api.md) | Done |
 | End-to-end testing (Stage 22): the customer journey, account security and operations on in-process PostgreSQL; coverage 87% of lines, enforced | Done |
-| Containerise the app (Stage 23): multi-stage `Dockerfile` (API, worker, migrate), compose profile `app` | Written; not built locally yet (no Docker here). CI builds it (Stage 24) |
+| Containerise the app (Stage 23): multi-stage `Dockerfile` (API, worker, migrate), compose profile `app` | Done: built and started in CI on every push |
 | CI (Stage 24): GitHub Actions on every push and pull request (format, lint, typecheck, unit + e2e with the coverage floor, build, Docker image) | Done |
 | Deployment (Stage 25) | Next: needs cloud accounts |
 | Business modules, CI, deployment | Not started |
