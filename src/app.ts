@@ -23,6 +23,7 @@ import { createWebhookProcessor } from './modules/webhooks/webhook.processor.ts'
 import type { WebhookQueue } from './modules/webhooks/webhook.controller.ts';
 import { createWebhookRouter } from './modules/webhooks/webhook.routes.ts';
 import { WebhookService } from './modules/webhooks/webhook.service.ts';
+import { createDocsRouters } from './docs/docs.routes.ts';
 import { createApiRouter } from './routes/index.ts';
 
 export interface AppDependencies {
@@ -47,6 +48,9 @@ export interface AppDependencies {
   /** Generated statements: local disk now, S3 later; in memory in tests. */
   statementStorage: DocumentStorage;
 }
+
+/** Shown in the OpenAPI document. */
+export const API_VERSION = '1.0.0';
 
 /** Middleware order is deliberate; see docs/ARCHITECTURE.md §5. */
 export function createApp({
@@ -87,6 +91,9 @@ export function createApp({
   );
 
   app.use(jsonBody);
+  const docs = createDocsRouters(API_VERSION);
+  app.use('/api/v1', docs.openApi);
+  app.use('/docs', docs.ui);
   app.use(
     '/api/v1',
     createApiRouter({

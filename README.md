@@ -126,7 +126,8 @@ docs/              project definition, architecture, case study, API, security
 | Beneficiaries (Stage 18): `/beneficiaries` (saved Fundra and bank recipients) | Done |
 | Admin (Stage 19): `/admin/*` (users, KYC review, transactions and reversals, wallets, webhooks, audit trail, settings) | Done, including role assignment; every route is tested against every role |
 | Reconciliation & statements (Stage 20): hourly and on-demand reconciliation, CSV statements (`/statements`) | Done |
-| API docs (Stage 21) | Next |
+| API docs (Stage 21): OpenAPI 3.1 at `/api/v1/openapi.json`, Swagger UI at `/docs/`, [api.md](docs/api.md) | Done |
+| End-to-end testing (Stage 22) | Next |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).

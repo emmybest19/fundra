@@ -120,9 +120,9 @@ Legend: `[x]` done · `[ ]` to do
 - [x] `reconcile-transactions`: wallet cache vs ledger, drift alerts: hourly and on demand (`GET /admin/reconciliation`); one snapshot; balances, holds, global balance and invariants; reports and audits, never auto-corrects; 10 checks on PostgreSQL 18.3
 - [x] `generate-statement`: `POST /statements` → job → CSV from the ledger (opening, entries with running balance, closing; CSV-injection safe) → `statement.ready` notification → owner-only download; new `statements` table (migration via `prisma migrate diff`); 15 checks on PostgreSQL 18.3
 
-### Stage 21 — API docs
-- [ ] OpenAPI generated from Zod + Swagger UI
-- [ ] Fill in [api.md](api.md)
+### Stage 21 — API docs ✅
+- [x] OpenAPI generated from Zod + Swagger UI: `/api/v1/openapi.json` (3.1, from the routes' own Zod schemas; admin entries from `ADMIN_ROUTES`), Swagger UI at `/docs/` served from `swagger-ui-dist` 5.33.1 (no CDN, CSP unchanged); a test fails if any mounted route is undocumented
+- [x] Fill in [api.md](api.md): every endpoint, plus pagination, rate limits, health and a pointer to the spec
 
 ### Stage 22 — End-to-end testing
 - [ ] E2E: register → KYC → fund → transfer → withdraw → history

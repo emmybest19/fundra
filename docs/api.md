@@ -1,8 +1,12 @@
 # Fundra API
 
-> The HTTP contract: base path, response envelopes and error codes. Endpoint contracts are added per module as they are built. Written for API consumers and for developers adding endpoints.
+> The HTTP contract: conventions, error codes and every endpoint, with the behaviour behind them. Written for API consumers and for developers adding endpoints.
 
-Base path: `/api/v1`. All bodies are JSON. Further conventions (pagination, idempotency, amounts) are in [ARCHITECTURE.md §12](ARCHITECTURE.md#12-cross-cutting-conventions--designed).
+Base path: `/api/v1`. Bodies are JSON unless an endpoint says otherwise. Amounts are **kobo as strings** (`"1000000"` = ₦10,000.00), dates `YYYY-MM-DD` (Africa/Lagos), timestamps ISO 8601 UTC.
+
+**Machine-readable spec:** `GET /api/v1/openapi.json` (OpenAPI 3.1, generated from the same Zod schemas the routes validate with), browsable with Swagger UI at **`/docs/`**. A test fails if a mounted route is missing from it. This page adds what a schema can't say: what each call does, when it refuses, and why.
+
+**Contents:** [Envelopes](#response-envelopes) · [Error codes](#error-codes) · [Idempotency](#idempotency) · [Pagination](#pagination) · [Rate limits](#rate-limits) · [Health](#health) · [Auth](#auth) · [Users](#users-the-signed-in-user) · [KYC](#kyc-identity-verification) · [Transfers](#transfers-send-money) · [Payments](#payments-money-in-and-out) · [Beneficiaries](#beneficiaries-saved-recipients) · [Statements](#statements) · [Notifications](#notifications-your-in-app-feed) · [Admin](#admin) · [Webhooks](#webhooks-from-the-payment-provider) · [Transactions](#transactions-your-history) · [Wallets](#wallets)
 
 ---
 
@@ -142,6 +146,38 @@ Idempotency-Key: 3f6c2b1e-9a7d-4c1e-8f2a-5b6c7d8e9f00
 Keys are scoped per user, so two users can never collide. Body key order doesn't matter: `{"a":1,"b":2}` and `{"b":2,"a":1}` are the same request.
 
 ---
+
+## Pagination
+
+Lists that can grow (transactions, notifications, admin lists) are **cursor-paged**, newest first: pass `limit` (default 20, or 50 for admin; at most 100) and, for the next page, `cursor` = the previous response's `meta.nextCursor`. `nextCursor: null` means there is no more. Cursors are opaque: pass them back exactly as given; a tampered one is `422`. Short, bounded lists (wallets, beneficiaries, statements) come whole.
+
+## Rate limits
+
+Every response carries `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset` (seconds) for the tightest policy that applied; over the limit is `429 RATE_LIMITED` with `Retry-After`.
+
+| Policy | Limit | Per |
+|---|---|---|
+| Every API request | 300 a minute | IP |
+| Register | 10 an hour | IP |
+| Sign in | 20 per 15 minutes | IP |
+| Refresh | 60 per 15 minutes | IP |
+| One-time codes (send / confirm) | 10 per 15 minutes | IP |
+| Password reset | 5 per 15 minutes | IP |
+| Sensitive account changes (email, phone, password, deactivate) | 10 per 15 minutes | user |
+| KYC identity checks (Tier 2) | 5 a day | user |
+| KYC document uploads | 20 an hour | user |
+| Recipient lookup | 60 an hour | user |
+| Transfers | 20 a minute | user |
+| Deposits, withdrawals, bill payments | 10 a minute each | user |
+| Bank name enquiry | 30 an hour | user |
+| Saving beneficiaries | 30 an hour | user |
+| Statement requests | 10 an hour | user |
+
+Health probes and webhooks from the payment provider aren't limited per user.
+
+## Health
+
+`GET /health/live` (the process is up) and `GET /health/ready` (dependencies reachable: `200` `ok`/`degraded`, `503` while a critical dependency is down or the server is draining). Outside `/api/v1`, never rate limited, never cached.
 
 ## Endpoints
 
