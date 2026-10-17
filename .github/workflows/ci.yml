@@ -1,0 +1,94 @@
+# Continuous integration: every push and pull request to main.
+# Actions are pinned to commit SHAs (tags can move); the comment names the release.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # postinstall runs `prisma generate`; install scripts are limited to package.json's allowScripts.
+      - name: Install
+        run: npm ci
+
+      - name: Format
+        run: npm run format:check
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Unit tests and the e2e suites (in-process PostgreSQL 18: no services needed), with the
+      # coverage floor from vitest.config.ts enforced.
+      - name: Unit + e2e tests (with coverage floor)
+        run: npm run test:coverage
+
+      # Real PostgreSQL and Redis via Testcontainers (Stage 6); passes with no tests until then.
+      - name: Integration tests
+        run: npm run test:integration
+
+      - name: Build
+        run: npm run build
+
+      - name: Coverage report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 7
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build the runtime and migrate images
+        run: |
+          docker build --target runtime -t fundra:ci .
+          docker build --target migrate -t fundra-migrate:ci .
+
+      - name: The image starts and answers liveness
+        run: |
+          docker run -d --name fundra -p 3000:3000 \
+            -e DATABASE_URL=postgresql://none:none@127.0.0.1:1/none \
+            -e REDIS_URL=redis://127.0.0.1:1 \
+            -e JWT_ACCESS_SECRET=ci-only-access-secret-at-least-32-characters \
+            -e OTP_SECRET=ci-only-otp-secret-at-least-32-characters-ok \
+            -e KYC_ENCRYPTION_KEY=Y2ktb25seS1reWMtZW5jcnlwdGlvbi1rZXktMzJieXQ= \
+            -e KYC_HMAC_KEY=ci-only-kyc-hmac-secret-at-least-32-chars \
+            -e PAYMENT_WEBHOOK_SECRET=ci-only-payment-webhook-secret-32-chars \
+            fundra:ci
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:3000/health/live && exit 0
+            sleep 1
+          done
+          docker logs fundra
+          exit 1
+
+      - name: The compose file is valid
+        run: |
+          printf 'POSTGRES_USER=ci\nPOSTGRES_PASSWORD=ci\nPOSTGRES_DB=ci\nREDIS_PASSWORD=ci\n' > .env
+          docker compose --profile app config --quiet

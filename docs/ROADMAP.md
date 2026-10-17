@@ -132,8 +132,8 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Multi-stage `Dockerfile` (API + worker): deps → build → prod-deps (`--omit=dev --ignore-scripts`) → runtime (non-root, liveness healthcheck), plus a `migrate` target; Debian slim for argon2's glibc prebuild. **Not built locally (no Docker here); CI builds it (Stage 24)**
 - [x] Add api + worker to `docker-compose.yml`: profile `app` (migrate once, then api and worker; shared storage volume; URLs point at the services). Plain `docker compose up -d` still starts only the databases
 
-### Stage 24 — CI
-- [ ] GitHub Actions: install → lint → typecheck → unit → integration → build
+### Stage 24 — CI ✅
+- [x] GitHub Actions: install → lint → typecheck → unit → integration → build ([ci.yml](../.github/workflows/ci.yml)): also the format check, the e2e suites with the coverage floor, the coverage report as an artifact, and a Docker job that builds the runtime and migrate images, starts the image and checks liveness, and validates the compose file. Actions pinned to commit SHAs
 
 ### Stage 25 — Deployment
 - [ ] AWS: app hosting, managed Postgres, Redis, S3 for KYC docs, logs

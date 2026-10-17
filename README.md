@@ -129,7 +129,8 @@ docs/              project definition, architecture, case study, API, security
 | API docs (Stage 21): OpenAPI 3.1 at `/api/v1/openapi.json`, Swagger UI at `/docs/`, [api.md](docs/api.md) | Done |
 | End-to-end testing (Stage 22): the customer journey, account security and operations on in-process PostgreSQL; coverage 87% of lines, enforced | Done |
 | Containerise the app (Stage 23): multi-stage `Dockerfile` (API, worker, migrate), compose profile `app` | Written; not built locally yet (no Docker here). CI builds it (Stage 24) |
-| CI (Stage 24) | Next |
+| CI (Stage 24): GitHub Actions on every push and pull request (format, lint, typecheck, unit + e2e with the coverage floor, build, Docker image) | Done |
+| Deployment (Stage 25) | Next: needs cloud accounts |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).
