@@ -141,6 +141,6 @@ Legend: `[x]` done · `[ ]` to do
 - [x] App connects as a non-owner DB role (no `TRUNCATE`/`ALTER`), so ledger triggers can't be disabled from the app: [prisma/sql/app-role.sql](../prisma/sql/app-role.sql) creates `fundra_app` (owns nothing; insert-and-read only on the append-only tables); an e2e suite runs the whole money flow as that role and proves TRUNCATE, DISABLE TRIGGER, DELETE/UPDATE on the ledger, editing the audit trail, DROP and ALTER are all refused
 
 ### Stage 26 — Final documentation
-- [ ] Fill in [security.md](security.md)
+- [x] Fill in [security.md](security.md): threat model, authentication, authorization, money integrity, webhooks, personal data, HTTP hardening, supply chain and known gaps, each pointing at the code or test that enforces it
 - [ ] PERFORMANCE.md (measured), LESSONS-LEARNT.md
 - [ ] Case study results + README setup instructions
