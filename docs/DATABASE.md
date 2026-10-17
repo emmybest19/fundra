@@ -589,6 +589,24 @@ A mutation test that removed `DEFERRABLE INITIALLY DEFERRED` made every valid po
 
 ---
 
+## 9.1 Database roles
+
+Two roles, so the application can never weaken its own guards:
+
+| Role | Used by | Can |
+|---|---|---|
+| Owner (`POSTGRES_USER`) | `prisma migrate deploy`, the seed, `prisma/sql/app-role.sql` | Everything: owns the tables, creates triggers |
+| `fundra_app` | The API and the worker (`DATABASE_URL` in production) | `SELECT/INSERT/UPDATE/DELETE` on ordinary tables; only `SELECT/INSERT` on `ledger_entries`, `ledger_accounts`, `audit_logs`; no `TRUNCATE`, no `ALTER`/`DROP`, no access to `_prisma_migrations` |
+
+Because `fundra_app` owns no table, it can't `ALTER TABLE … DISABLE TRIGGER`, which PostgreSQL allows only to an owner. So neither a bug nor an injection in the app can switch off the append-only and balanced-ledger triggers. Set it up once per database, after migrations, as the owner:
+
+```bash
+psql "$OWNER_DATABASE_URL" -f prisma/sql/app-role.sql
+psql "$OWNER_DATABASE_URL" -c "ALTER ROLE fundra_app PASSWORD '<from your secret manager>'"
+```
+
+The script is idempotent and sets default privileges, so tables from later migrations are covered. A new append-only table must repeat the `REVOKE UPDATE, DELETE` in its own migration. Verified by `tests/e2e/app-role.test.ts`: the whole money flow runs as `fundra_app`, and every forbidden statement is refused with a permission error (two deliberate breaks to the script were each caught).
+
 ## 10. Seed data
 
 `npm run db:seed` runs [prisma/seed.ts](../prisma/seed.ts) in **one database transaction**: either everything applies or nothing does. It's safe to re-run, and it treats the two kinds of data differently:

@@ -108,7 +108,12 @@ export interface E2e {
   close(): Promise<void>;
 }
 
-export async function startE2e(): Promise<E2e> {
+/**
+ * `asAppRole`: after migrations and the seed (as the owner), apply prisma/sql/app-role.sql and
+ * switch the session to fundra_app, so the whole app runs with production's privileges.
+ * (PGlite serves every connection from one session, so one SET ROLE covers them all.)
+ */
+export async function startE2e(options: { asAppRole?: boolean } = {}): Promise<E2e> {
   const pg = await PGlite.create();
   for (const dir of readdirSync(MIGRATIONS)
     .filter((d) => /^\d{14}_/.test(d))
@@ -127,6 +132,10 @@ export async function startE2e(): Promise<E2e> {
     maxConnections: 4,
   });
   await seed(db);
+  if (options.asAppRole === true) {
+    await pg.exec(readFileSync(join(import.meta.dirname, '../../prisma/sql/app-role.sql'), 'utf8'));
+    await pg.exec('SET ROLE fundra_app');
+  }
 
   const provider = new MockPaymentProvider({ webhookSecret: WEBHOOK_SECRET });
   const messages = new MemoryMessageSender();

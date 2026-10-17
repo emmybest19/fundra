@@ -130,7 +130,8 @@ docs/              project definition, architecture, case study, API, security
 | End-to-end testing (Stage 22): the customer journey, account security and operations on in-process PostgreSQL; coverage 87% of lines, enforced | Done |
 | Containerise the app (Stage 23): multi-stage `Dockerfile` (API, worker, migrate), compose profile `app` | Done: built and started in CI on every push |
 | CI (Stage 24): GitHub Actions on every push and pull request (format, lint, typecheck, unit + e2e with the coverage floor, build, Docker image) | Done |
-| Deployment (Stage 25) | Next: needs cloud accounts |
+| Deployment (Stage 25): the app's least-privilege database role (`prisma/sql/app-role.sql`) | Partly done: the role is built and tested; AWS hosting and production secrets wait for your cloud account |
+| Final documentation (Stage 26) | Next |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).

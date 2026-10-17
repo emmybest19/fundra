@@ -136,9 +136,9 @@ Legend: `[x]` done · `[ ]` to do
 - [x] GitHub Actions: install → lint → typecheck → unit → integration → build ([ci.yml](../.github/workflows/ci.yml)): also the format check, the e2e suites with the coverage floor, the coverage report as an artifact, and a Docker job that builds the runtime and migrate images, starts the image and checks liveness, and validates the compose file. Actions pinned to commit SHAs
 
 ### Stage 25 — Deployment
-- [ ] AWS: app hosting, managed Postgres, Redis, S3 for KYC docs, logs
-- [ ] Production config + secrets
-- [ ] App connects as a non-owner DB role (no `TRUNCATE`/`ALTER`), so ledger triggers can't be disabled from the app
+- [ ] AWS: app hosting, managed Postgres, Redis, S3 for KYC docs, logs. **Deferred: needs your cloud account and cost decisions**
+- [ ] Production config + secrets. **Deferred with the item above** (the env contract is ready: README's variable table; secrets never in the image)
+- [x] App connects as a non-owner DB role (no `TRUNCATE`/`ALTER`), so ledger triggers can't be disabled from the app: [prisma/sql/app-role.sql](../prisma/sql/app-role.sql) creates `fundra_app` (owns nothing; insert-and-read only on the append-only tables); an e2e suite runs the whole money flow as that role and proves TRUNCATE, DISABLE TRIGGER, DELETE/UPDATE on the ledger, editing the audit trail, DROP and ALTER are all refused
 
 ### Stage 26 — Final documentation
 - [ ] Fill in [security.md](security.md)
