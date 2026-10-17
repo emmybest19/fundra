@@ -125,7 +125,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Fill in [api.md](api.md): every endpoint, plus pagination, rate limits, health and a pointer to the spec
 
 ### Stage 22 — End-to-end testing
-- [ ] E2E: register → KYC → fund → transfer → withdraw → history
+- [x] E2E: register → KYC → fund → transfer → withdraw → history: through the HTTP API on in-process PostgreSQL 18 (PGlite 0.5.8, dev dependency; all migrations, real seed), worker jobs drained through the real handlers; also notifications, a statement and reconciliation; no Docker needed
 - [ ] Coverage report; close the gaps
 
 ### Stage 23 — Containerise the app

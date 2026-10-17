@@ -127,7 +127,7 @@ docs/              project definition, architecture, case study, API, security
 | Admin (Stage 19): `/admin/*` (users, KYC review, transactions and reversals, wallets, webhooks, audit trail, settings) | Done, including role assignment; every route is tested against every role |
 | Reconciliation & statements (Stage 20): hourly and on-demand reconciliation, CSV statements (`/statements`) | Done |
 | API docs (Stage 21): OpenAPI 3.1 at `/api/v1/openapi.json`, Swagger UI at `/docs/`, [api.md](docs/api.md) | Done |
-| End-to-end testing (Stage 22) | Next |
+| End-to-end testing (Stage 22): the customer journey on in-process PostgreSQL | In progress (journey done; coverage next) |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).
@@ -186,7 +186,7 @@ Press Ctrl+C to stop gracefully: in-flight requests finish before the process ex
 | `npm run format` / `format:check` | Prettier write / check (Markdown is excluded) |
 | `npm test` / `test:watch` | Unit tests (`tests/unit`) once / in watch mode |
 | `npm run test:integration` | Integration tests (`tests/integration`), against real PostgreSQL/Redis |
-| `npm run test:e2e` | HTTP end-to-end tests (`tests/e2e`) with Supertest |
+| `npm run test:e2e` | The customer journey end to end (`tests/e2e`): the real app over HTTP on a real PostgreSQL 18 engine running in process (PGlite, all migrations, the real seed), worker jobs drained in the test. Needs no Docker |
 | `npm run test:all` / `test:coverage` | All three suites / with a v8 coverage report in `coverage/` |
 
 Development runs `.ts` files directly with Node 24's built-in type stripping, so there's no `tsx` or `ts-node`. Because of that, relative imports use the **`.ts`** extension (`import { x } from './x.ts'`). The build rewrites them to `.js`.

@@ -1068,6 +1068,17 @@ A required concurrency test fires N parallel transfers at one wallet and asserts
 
 ---
 
+## 12.1 Testing — *Built*
+
+| Layer | What it proves | How it runs |
+|---|---|---|
+| Unit (`tests/unit`, 849 tests) | Rules, schemas, routers, the admin permission matrix (every route × every role), OpenAPI coverage of every mounted route | Vitest; no database |
+| End to end (`tests/e2e`) | The customer journey through the HTTP API: register → verify → KYC → deposit (signed webhook) → transfer (and its idempotent replay) → withdrawal (name enquiry, hold, payout webhook) → both histories with running balances → notifications in app and by email → a CSV statement → reconciliation clean | The real app on PGlite (PostgreSQL 18 in process: every migration, the real seed). Queues record jobs and the test drains them through the real worker handlers, as the worker process would |
+| Database checks (development) | Each item's behaviour on PostgreSQL 18.3, with deliberate code breaks to prove the checks bite | Scripts against PGlite, run per item (not in the repo) |
+| Integration (`tests/integration`) | Real PostgreSQL and Redis servers, real concurrency, BullMQ on Redis | Testcontainers: waits for Docker |
+
+The e2e journey caught a deliberate break (deposits never credited) in 6 of its 8 steps.
+
 ## 13. Known debt and current gaps
 
 This reflects the repository as it stands, not the design.
@@ -1093,7 +1104,7 @@ This reflects the repository as it stands, not the design.
 | Deposits held for review, and abandoned checkouts, stay `PROCESSING` | Resolving held deposits is an admin action (Stage 19). Expiring abandoned ones (ask `getPaymentStatus`, then fail them) belongs to the `reconcile-transactions` job |
 | Docker isn't installed on the development machine; PostgreSQL and Redis aren't available | Integration work is blocked until they are set up |
 | No `.env.example` (removed by choice) | New contributors can't see which variables are required; `config/env.ts` validation will be the only source of truth |
-| No tests written yet; Testcontainers not installed (Stage 6) | `passWithNoTests` is on in `vitest.config.ts`, so empty test runs pass. Turn it off once every project has tests |
+| Integration tests on real servers wait for Docker (Testcontainers, Stage 6) | Unit tests run everywhere; the e2e journey runs on PGlite (in-process PostgreSQL 18) with in-memory Redis-side stores, so no Docker is needed. Real PostgreSQL and Redis servers, and true concurrency, come with Testcontainers. `passWithNoTests` stays on until the integration project has tests |
 | `npm audit`: 4 high-severity advisories, all inside the `prisma` development tool (`mysql2`, `deepmerge-ts`) | Not shipped in the API runtime; npm's only fix is downgrading to Prisma 6, which was rejected |
 | TypeScript held at 6.0.3, not 7.x | typescript-eslint supports TypeScript `<6.1.0` |
 
