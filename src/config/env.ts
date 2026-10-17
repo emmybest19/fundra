@@ -57,6 +57,9 @@ const envSchema = z.object({
   KYC_HMAC_KEY: z.string().min(32, 'Must be at least 32 characters of random data'),
   // Where KYC documents are stored (local disk until S3, Stage 25). Never served over HTTP.
   KYC_STORAGE_DIR: z.string().default('storage/kyc'),
+  // Where generated statements are written (local disk until S3, Stage 25). Read by the API
+  // for downloads and written by the worker, so both must see the same directory.
+  STATEMENT_STORAGE_DIR: z.string().default('storage/statements'),
   // Payment provider for deposits and withdrawals (Stage 14). Only the mock exists; it moves no
   // real money, so the server logs a warning at startup.
   PAYMENT_PROVIDER: z.enum(['mock']).default('mock'),

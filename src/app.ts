@@ -1,4 +1,5 @@
 // Builds the Express app: security middleware, routes, error handling.
+import type { Queue } from 'bullmq';
 import express, { type Express } from 'express';
 import { env } from './config/env.ts';
 import type { PrismaClient } from './generated/prisma/client.ts';
@@ -41,6 +42,10 @@ export interface AppDependencies {
   paymentProvider: PaymentProvider;
   /** The BullMQ `webhooks` queue (Stage 16): webhook processing is handed to the worker. */
   webhookQueue: WebhookQueue;
+  /** The BullMQ `maintenance` queue: statement generation is handed to the worker. */
+  maintenanceQueue: Pick<Queue, 'add'>;
+  /** Generated statements: local disk now, S3 later; in memory in tests. */
+  statementStorage: DocumentStorage;
 }
 
 /** Middleware order is deliberate; see docs/ARCHITECTURE.md §5. */
@@ -54,6 +59,8 @@ export function createApp({
   documentStorage,
   paymentProvider,
   webhookQueue,
+  maintenanceQueue,
+  statementStorage,
 }: AppDependencies): Express {
   const app = express();
 
@@ -90,6 +97,8 @@ export function createApp({
       kycProvider,
       documentStorage,
       paymentProvider,
+      maintenanceQueue,
+      statementStorage,
     }),
   );
 

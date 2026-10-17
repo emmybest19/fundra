@@ -1,5 +1,8 @@
 // Mounts all module routers under /api/v1.
+import type { Queue } from 'bullmq';
 import { Router } from 'express';
+import { createStatementRouter } from '../modules/statements/statement.routes.ts';
+import { StatementService } from '../modules/statements/statement.service.ts';
 import { env } from '../config/env.ts';
 import type { PrismaClient } from '../generated/prisma/client.ts';
 import { createAuthenticate } from '../middleware/auth.middleware.ts';
@@ -49,6 +52,8 @@ export interface ApiDependencies {
   kycProvider: KycProvider;
   documentStorage: DocumentStorage;
   paymentProvider: PaymentProvider;
+  maintenanceQueue: Pick<Queue, 'add'>;
+  statementStorage: DocumentStorage;
 }
 
 export function createApiRouter({
@@ -59,6 +64,8 @@ export function createApiRouter({
   kycProvider,
   documentStorage,
   paymentProvider,
+  maintenanceQueue,
+  statementStorage,
 }: ApiDependencies): Router {
   const tokens = new TokenService(env.JWT_ACCESS_SECRET);
   const otp = new OtpService(otpStore, env.OTP_SECRET);
@@ -157,6 +164,15 @@ export function createApiRouter({
       roles: new AdminRoleService(db),
       reconciliation: new ReconciliationService(db),
       authenticate,
+    }),
+  );
+
+  router.use(
+    '/statements',
+    createStatementRouter({
+      statements: new StatementService(db, statementStorage, maintenanceQueue),
+      authenticate,
+      rateLimitStore,
     }),
   );
 

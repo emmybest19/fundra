@@ -31,6 +31,8 @@ function appWith(
       webhookSecret: 'test-only-payment-webhook-secret-not-for-production',
     }),
     webhookQueue: { add: () => Promise.reject(new Error('no queue in this test')) },
+    maintenanceQueue: { add: () => Promise.reject(new Error('no queue in this test')) },
+    statementStorage: new MemoryDocumentStorage(),
   });
 }
 

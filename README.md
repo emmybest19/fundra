@@ -125,7 +125,8 @@ docs/              project definition, architecture, case study, API, security
 | Notifications (Stage 17): records, email/SMS/push delivery jobs (mock senders), in-app feed (`/notifications`), every business event wired | Done. Email/SMS/push providers are mocks until deployment |
 | Beneficiaries (Stage 18): `/beneficiaries` (saved Fundra and bank recipients) | Done |
 | Admin (Stage 19): `/admin/*` (users, KYC review, transactions and reversals, wallets, webhooks, audit trail, settings) | Done, including role assignment; every route is tested against every role |
-| Reconciliation & statements (Stage 20) | In progress (reconciliation done; statements next) |
+| Reconciliation & statements (Stage 20): hourly and on-demand reconciliation, CSV statements (`/statements`) | Done |
+| API docs (Stage 21) | Next |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).
@@ -227,6 +228,7 @@ Configuration lives in a local `.env` file, which git ignores. `src/config/env.t
 | `KYC_HMAC_KEY` | **yes** | — | HMAC key for BVN/NIN uniqueness, ≥32 characters of random data; different from the other secrets. Changing it breaks duplicate detection for numbers already stored |
 | `KYC_PROVIDER` | no | `mock` | Only `mock` exists. It approves almost anyone, so the server logs a warning at startup |
 | `KYC_STORAGE_DIR` | no | `storage/kyc` | Where KYC documents are written (git-ignored). Never served over HTTP |
+| `STATEMENT_STORAGE_DIR` | no | `storage/statements` | Where generated statements are written (git-ignored). The API and the worker must point at the same directory |
 | `PAYMENT_PROVIDER` | no | `mock` | Only `mock` exists. It moves no real money, so the server logs a warning at startup |
 | `PAYMENT_WEBHOOK_SECRET` | **yes** | — | The payment provider's webhook signing secret (HMAC), ≥32 characters. For the mock, any random data (generate it like `JWT_ACCESS_SECRET`); for a real provider, the secret from its dashboard |
 | `POSTGRES_USER` · `POSTGRES_PASSWORD` · `POSTGRES_DB` · `REDIS_PASSWORD` | for Docker | — | Read by `docker-compose.yml`, not the app |

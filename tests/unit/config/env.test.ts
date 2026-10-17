@@ -38,6 +38,7 @@ describe('parseEnv', () => {
       KYC_ENCRYPTION_KEY: valid.KYC_ENCRYPTION_KEY,
       KYC_HMAC_KEY: valid.KYC_HMAC_KEY,
       KYC_STORAGE_DIR: 'storage/kyc',
+      STATEMENT_STORAGE_DIR: 'storage/statements',
       PAYMENT_PROVIDER: 'mock',
       PAYMENT_WEBHOOK_SECRET: valid.PAYMENT_WEBHOOK_SECRET,
     });

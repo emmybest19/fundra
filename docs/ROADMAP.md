@@ -116,9 +116,9 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Users (view/suspend/reactivate), KYC review (`KycService.startReview/approve/reject` exist), transactions, wallets (`WalletService.freeze/unfreeze/reopen` exist), audit logs, settings: `/admin/*` built from one route table (each with its permission); no self-action, staff accounts protected, reactivation reopens wallets; fee history kept; 34 checks on PostgreSQL 18.3
 - [x] Per-permission protection: role assignment (`roles:assign`; never yourself, never the last super admin; effective on the next request); every route × every role tested through the real router (176 cases) plus a pinned route → permission spec
 
-### Stage 20 — Reconciliation & statements
+### Stage 20 — Reconciliation & statements ✅
 - [x] `reconcile-transactions`: wallet cache vs ledger, drift alerts: hourly and on demand (`GET /admin/reconciliation`); one snapshot; balances, holds, global balance and invariants; reports and audits, never auto-corrects; 10 checks on PostgreSQL 18.3
-- [ ] `generate-statement`
+- [x] `generate-statement`: `POST /statements` → job → CSV from the ledger (opening, entries with running balance, closing; CSV-injection safe) → `statement.ready` notification → owner-only download; new `statements` table (migration via `prisma migrate diff`); 15 checks on PostgreSQL 18.3
 
 ### Stage 21 — API docs
 - [ ] OpenAPI generated from Zod + Swagger UI

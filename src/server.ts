@@ -51,6 +51,8 @@ const server = createServer(
     // PAYMENT_PROVIDER has one value today; a sandbox adapter becomes a second branch here.
     paymentProvider: new MockPaymentProvider({ webhookSecret: env.PAYMENT_WEBHOOK_SECRET }),
     webhookQueue: queues.webhooks,
+    maintenanceQueue: queues.maintenance,
+    statementStorage: new LocalDocumentStorage(env.STATEMENT_STORAGE_DIR),
   }),
 );
 

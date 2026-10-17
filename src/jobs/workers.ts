@@ -23,6 +23,11 @@ import { NotificationDelivery } from '../modules/notifications/notification.work
 import { createWebhookProcessor } from '../modules/webhooks/webhook.processor.ts';
 import { recordAudit } from '../modules/audit/audit.service.ts';
 import { ReconciliationService } from '../modules/ledger/reconciliation.service.ts';
+import { LocalDocumentStorage, type DocumentStorage } from '../modules/kyc/document-storage.ts';
+import {
+  StatementService,
+  type GenerateStatementData,
+} from '../modules/statements/statement.service.ts';
 import {
   createQueues,
   QUEUE_NAMES,
@@ -60,8 +65,9 @@ const CONCURRENCY: Readonly<Record<QueueName, number>> = {
 export function createJobHandlers(deps: {
   db: PrismaClient;
   provider: PaymentProvider;
-  queues: Pick<JobQueues, 'notifications'>;
+  queues: Pick<JobQueues, 'notifications' | 'maintenance'>;
   senders: ChannelSenders;
+  statementStorage: DocumentStorage;
   logger: Logger;
 }): JobHandlers {
   const webhooks = createWebhookProcessor(deps.db, deps.provider);
@@ -70,6 +76,7 @@ export function createJobHandlers(deps: {
   const notifications = new NotificationService(deps.db, deps.queues.notifications);
   const delivery = new NotificationDelivery(deps.db, deps.senders);
   const reconciliation = new ReconciliationService(deps.db);
+  const statements = new StatementService(deps.db, deps.statementStorage, deps.queues.maintenance);
   // The last attempt marks the notification FAILED before the error is rethrown.
   const deliver = (job: Job) =>
     delivery.deliver((job.data as DeliverNotificationData).notificationId, {
@@ -94,6 +101,11 @@ export function createJobHandlers(deps: {
     'send-sms': deliver,
     'send-push': deliver,
     'requeue-notifications': async () => ({ queued: await notifications.requeuePending() }),
+    'generate-statement': async (job) => ({
+      status: await statements.generate((job.data as GenerateStatementData).statementId, {
+        final: job.attemptsMade + 1 >= (job.opts.attempts ?? 1),
+      }),
+    }),
     // Reports only: drift is logged loudly and audited for a person, never auto-corrected.
     'reconcile-transactions': async () => {
       const report = await reconciliation.run();
@@ -213,6 +225,7 @@ if (import.meta.main) {
       provider,
       queues,
       senders: new MemoryChannelSenders(),
+      statementStorage: new LocalDocumentStorage(env.STATEMENT_STORAGE_DIR),
       logger,
     }),
     logger,

@@ -587,6 +587,29 @@ Verified on PostgreSQL 18.3 with real activity (deposit, transfer, a withdrawal 
 
 Three deliberate code breaks were each caught: available-balance drift ignored, invariants left out of `ok`, and the job never alerting.
 
+### 7.10 Statements — *Built*
+
+[statements module](../src/modules/statements/):
+
+| Step | Design |
+|---|---|
+| Request (`POST /statements`) | A wallet of yours (anyone else's is 404) and Lagos dates `from`–`to`, inclusive, at most 366 days, nothing in the future; 10 an hour. A `statements` row (PENDING) and a `generate-statement` job (job ID = statement ID) on the maintenance queue. If the queue can't take it within 2 s, the row is removed and the answer is 503: nothing is left half-requested. **202** |
+| Generate (worker) | From the ledger only. The opening balance is the last entry's `balance_after` before the period (0 if none), then every entry in it in (created_at, id) order with its own running balance; closing = the last one. Pending holds aren't money moved, so they aren't on a statement. Retry-safe: a file left by an earlier attempt is replaced, and a READY statement is skipped. The last failed attempt marks it FAILED with the reason. READY + outbox `statement.ready` → a "Statement ready" notification |
+| File | CSV (UTF-8, CRLF): a header block (name, account number, currency, period, opening and closing), then Date (Lagos time), Reference, Type, Description, Debit, Credit, Balance in naira with two decimals. **CSV injection:** a cell starting with `=`, `+`, `-`, `@`, tab or CR (descriptions are user-written) gets a leading `'`, so spreadsheets show it as text. Stored at `<userId>/<statementId>` in statement storage (`STATEMENT_STORAGE_DIR`, local disk until S3); API and worker must share it |
+| Download | `GET /statements/:id/download`: owner only, `409 STATEMENT_NOT_READY` until READY (or if FAILED), an attachment named `fundra-statement-<account>-<from>-to-<to>.csv`, never cached |
+
+The `statements` table came with migration `20261017090000_statements`. It was generated with `prisma migrate diff` from the two schema files, which needs no database, and the CHECK constraints were added by hand: the period ordered, a READY row having its file and figures, a FAILED row having its reason.
+
+Verified on PostgreSQL 18.3 with real activity (deposit, transfer with a formula-like description, withdrawal with its fee). 15 checks covering:
+- request and queued job, and download before generation;
+- generation with the exact rows, running balances, header and closing balance;
+- the neutralised formula;
+- skip on re-run, `statement.ready`, and an empty earlier period;
+- owner-only access and listing;
+- a future end or over 366 days, the queue down leaving nothing behind, and storage failing (retried, then FAILED, then the download explaining).
+
+The ledger is append-only, so entries can't be backdated to test a non-zero opening balance directly; that path is the same `balance_after` read the closing balance uses. Three deliberate code breaks were each caught: the formula guard removed, statement reads not scoped to the owner, and a row left behind when queueing failed.
+
 ## 8. Key flows — *Designed*
 
 ### 8.1 P2P transfer — *Built*

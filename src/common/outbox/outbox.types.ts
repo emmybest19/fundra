@@ -112,6 +112,13 @@ export interface OutboxEventPayloads {
     fee: AmountString;
     currency: Currency;
   };
+  /** A requested statement has been generated and can be downloaded. */
+  'statement.ready': {
+    statementId: string;
+    userId: string;
+    periodStart: string;
+    periodEnd: string;
+  };
   /** Never the reason: a freeze reason stays in the audit log (no tipping off). */
   'wallet.status_changed': {
     userId: string;

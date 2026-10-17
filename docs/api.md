@@ -103,6 +103,7 @@ Implementation: [src/common/errors/](../src/common/errors/) and [src/common/util
 | 422 | `BENEFICIARY_LIMIT` | You have the maximum number of beneficiaries (100) |
 | 403 | `ADMIN_SELF_ACTION` | (Admin) You can't take this action on your own account |
 | 409 | `LAST_SUPER_ADMIN` | (Admin) The last super admin can't lose the role |
+| 409 | `STATEMENT_NOT_READY` | The statement is still being generated, or failed |
 | 401 | `INVALID_WEBHOOK_SIGNATURE` | (Payment provider) The webhook's signature is missing or doesn't match its body |
 | 409 | `KYC_TIER_ORDER` | Tiers are taken in order; complete the previous tier first |
 | 409 | `KYC_TIER_ALREADY_APPROVED` | You're already verified at this tier or higher |
@@ -740,6 +741,30 @@ A Fundra recipient takes exactly one of `recipientHandle` or `recipientAccountNu
 #### `PATCH /api/v1/beneficiaries/:id` · `DELETE /api/v1/beneficiaries/:id`
 
 `PATCH` takes `{ "nickname": "Mum" }` (or `null` to clear) and nothing else: who a beneficiary is can't change. To point at someone else, delete it and add a new one. `DELETE` answers `204`.
+
+### Statements
+
+Your own only (anyone else's is `404`); never cached.
+
+#### `POST /api/v1/statements`
+
+```json
+{ "walletId": "…", "from": "2026-10-01", "to": "2026-10-31" }
+```
+
+Lagos calendar dates, inclusive; at most 366 days; nothing in the future. 10 per hour. **202** with the statement (`PENDING`); a "Statement ready" notification follows when it's generated. `503` if statements can't be queued right now (nothing was kept; try again).
+
+#### `GET /api/v1/statements?walletId=…` · `GET /api/v1/statements/:id`
+
+```json
+{ "data": { "statement": { "id": "…", "walletId": "…", "periodStart": "2026-10-01", "periodEnd": "2026-10-31", "status": "READY", "openingBalance": "0", "closingBalance": "1199000", "entryCount": 3, "createdAt": "…", "completedAt": "…" } } }
+```
+
+`status`: `PENDING`, `READY` or `FAILED` (request it again).
+
+#### `GET /api/v1/statements/:id/download`
+
+A CSV attachment: a header block (account, period, opening and closing balances), then one row per ledger entry: date (Lagos time), reference, type, description, debit, credit, running balance, in naira with two decimals. `409 STATEMENT_NOT_READY` until it's READY.
 
 ### Notifications (your in-app feed)
 

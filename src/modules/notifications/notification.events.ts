@@ -274,6 +274,18 @@ const MAPPERS: { [T in OutboxEventType]?: Mapper<T> } = {
     ]);
   },
 
+  'statement.ready': (_db, p) =>
+    Promise.resolve([
+      {
+        userId: p.userId,
+        type: 'statement.ready',
+        category: 'transactions',
+        title: 'Statement ready',
+        body: `Your statement for ${p.periodStart} to ${p.periodEnd} is ready to download.`,
+        data: { statementId: p.statementId },
+      },
+    ]),
+
   // user.deactivated: the owner was emailed directly; the account no longer receives anything.
 };
 
