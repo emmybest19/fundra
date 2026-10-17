@@ -45,6 +45,57 @@ services:
       timeout: 3s
       retries: 10
 
+  # ─── The app (profile `app`): docker compose --profile app up -d ─────────────────────────
+  # Plain `docker compose up -d` still starts only the databases, for `npm run dev`.
+  # Secrets come from .env; the connection URLs point at the services above, not localhost.
+  migrate:
+    profiles: [app]
+    build: { context: ., target: migrate }
+    env_file: .env
+    environment: &app-env
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      KYC_STORAGE_DIR: /app/storage/kyc
+      STATEMENT_STORAGE_DIR: /app/storage/statements
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: 'no'
+
+  api:
+    profiles: [app]
+    build: { context: ., target: runtime }
+    image: fundra:local
+    env_file: .env
+    environment: *app-env
+    ports:
+      - '127.0.0.1:${API_PORT:-3000}:3000'
+    volumes:
+      - app-storage:/app/storage
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+
+  worker:
+    profiles: [app]
+    image: fundra:local
+    command: ['node', 'dist/jobs/workers.js']
+    env_file: .env
+    environment: *app-env
+    # Shares the API's storage: the worker writes statements the API serves.
+    volumes:
+      - app-storage:/app/storage
+    # No HTTP server: the image's liveness check doesn't apply.
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      api: { condition: service_started }
+    restart: unless-stopped
+
 volumes:
   postgres-data:
   redis-data:
+  app-storage:

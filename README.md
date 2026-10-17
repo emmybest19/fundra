@@ -128,7 +128,8 @@ docs/              project definition, architecture, case study, API, security
 | Reconciliation & statements (Stage 20): hourly and on-demand reconciliation, CSV statements (`/statements`) | Done |
 | API docs (Stage 21): OpenAPI 3.1 at `/api/v1/openapi.json`, Swagger UI at `/docs/`, [api.md](docs/api.md) | Done |
 | End-to-end testing (Stage 22): the customer journey, account security and operations on in-process PostgreSQL; coverage 87% of lines, enforced | Done |
-| Containerise the app (Stage 23) | Next: needs Docker installed |
+| Containerise the app (Stage 23): multi-stage `Dockerfile` (API, worker, migrate), compose profile `app` | Written; not built locally yet (no Docker here). CI builds it (Stage 24) |
+| CI (Stage 24) | Next |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).
@@ -171,7 +172,18 @@ curl http://localhost:3000/health/ready       # {"status":"ready","checks":{"dat
                                               # 503 "unavailable" if PostgreSQL is down
 ```
 
-Press Ctrl+C to stop gracefully: in-flight requests finish before the process exits.
+Press Ctrl+C to stop gracefully: in-flight requests finish before the process exits. The background worker (webhooks, the outbox, notifications, statements, reconciliation) runs separately: `npm run dev:worker`.
+
+API reference: <http://localhost:3000/docs/> (Swagger UI) and `/api/v1/openapi.json`.
+
+**Or run everything in containers** (the API, the worker, and a one-shot migration, built from the [Dockerfile](Dockerfile)):
+
+```bash
+docker compose --profile app up -d --build   # postgres, redis, migrate (once), api, worker
+docker compose --profile app logs -f api worker
+```
+
+The API is published on `127.0.0.1:${API_PORT:-3000}`. Containers read secrets from `.env`, while their database and Redis URLs point at the compose services. KYC documents and statements live in the `app-storage` volume, shared by the API and the worker.
 
 ### Scripts
 
