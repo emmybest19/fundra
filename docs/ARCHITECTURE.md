@@ -562,6 +562,31 @@ Verified on PostgreSQL 18.3 (PGlite): 32 checks (every shape refusal, each trans
 
 ---
 
+### 7.9 Reconciliation — *Built*
+
+[reconciliation.service.ts](../src/modules/ledger/reconciliation.service.ts), run hourly as `reconcile-transactions` and on demand at `GET /admin/reconciliation` (`transactions:read`). One REPEATABLE READ snapshot, so a posting in progress can't look like drift:
+
+| Check | Meaning when it fails |
+|---|---|
+| Each wallet's `ledger_balance` = its entries' credits − debits | The cache and the ledger disagree |
+| Each wallet's `available_balance` = that − its ACTIVE holds | A hold was placed or resolved without the cache following |
+| Σ debits = Σ credits across the ledger | The books don't balance (the deferred trigger should make this impossible) |
+| No COMPLETED or REVERSED transaction without entries; no ACTIVE hold on a finished transaction | A broken invariant: a bug to find |
+| *Attention (not failures):* PROCESSING over a day by type, payments held for review, FAILED webhooks | Something waiting on a person |
+
+It **only reports**. A mismatch is never corrected automatically: the cache, the entries or the code could be the one that's wrong, and money must not be moved to make numbers agree. Drift is logged at error level and audited as `reconciliation.drift_detected` (SYSTEM) with each wallet's figures, for a person to investigate.
+
+Verified on PostgreSQL 18.3 with real activity (deposit, transfer, a withdrawal on hold), then deliberate tampering in SQL. 10 checks covering:
+- clean books;
+- a cache 100 kobo off (reported, and left untouched);
+- an available balance ignoring a hold;
+- an active hold on a finished transaction;
+- a two-day-old deposit flagged for attention;
+- the admin endpoint and its 403;
+- the job alerting only on drift.
+
+Three deliberate code breaks were each caught: available-balance drift ignored, invariants left out of `ok`, and the job never alerting.
+
 ## 8. Key flows — *Designed*
 
 ### 8.1 P2P transfer — *Built*

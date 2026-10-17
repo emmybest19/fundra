@@ -117,7 +117,7 @@ Legend: `[x]` done · `[ ]` to do
 - [x] Per-permission protection: role assignment (`roles:assign`; never yourself, never the last super admin; effective on the next request); every route × every role tested through the real router (176 cases) plus a pinned route → permission spec
 
 ### Stage 20 — Reconciliation & statements
-- [ ] `reconcile-transactions`: wallet cache vs ledger, drift alerts
+- [x] `reconcile-transactions`: wallet cache vs ledger, drift alerts: hourly and on demand (`GET /admin/reconciliation`); one snapshot; balances, holds, global balance and invariants; reports and audits, never auto-corrects; 10 checks on PostgreSQL 18.3
 - [ ] `generate-statement`
 
 ### Stage 21 — API docs

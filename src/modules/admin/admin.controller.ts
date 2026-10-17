@@ -23,6 +23,7 @@ import {
   usersQuery,
   webhooksQuery,
 } from './admin.schema.ts';
+import type { ReconciliationService } from '../ledger/reconciliation.service.ts';
 import type { AdminRoleService } from './admin-roles.service.ts';
 import type { AdminSettingsService } from './admin-settings.service.ts';
 import type { AdminService } from './admin.service.ts';
@@ -41,6 +42,7 @@ export interface AdminControllerDependencies {
   wallets: WalletService;
   reversals: TransferReversalService;
   roles: AdminRoleService;
+  reconciliation: ReconciliationService;
 }
 
 export function createAdminController({
@@ -50,6 +52,7 @@ export function createAdminController({
   wallets,
   reversals,
   roles,
+  reconciliation,
 }: AdminControllerDependencies) {
   const adminId = (req: Request) => authOf(req).userId;
 
@@ -164,6 +167,11 @@ export function createAdminController({
       await wallets.reopen(params.id, adminId(req), auditContextFrom(req));
       send(res, { wallet: await admin.getWallet(params.id) });
     }),
+
+    // Reconciliation (read-only: runs the checks now)
+    reconcile: async (_req: Request, res: Response) => {
+      send(res, { report: await reconciliation.run() });
+    },
 
     // Webhooks and audit
     listWebhooks: validated({ query: webhooksQuery }, async ({ query }, _req, res) => {

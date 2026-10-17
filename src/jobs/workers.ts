@@ -21,6 +21,8 @@ import type { ChannelSenders } from '../modules/notifications/notification.types
 import { notificationsForEvent } from '../modules/notifications/notification.events.ts';
 import { NotificationDelivery } from '../modules/notifications/notification.worker.ts';
 import { createWebhookProcessor } from '../modules/webhooks/webhook.processor.ts';
+import { recordAudit } from '../modules/audit/audit.service.ts';
+import { ReconciliationService } from '../modules/ledger/reconciliation.service.ts';
 import {
   createQueues,
   QUEUE_NAMES,
@@ -35,6 +37,9 @@ export type JobHandlers = Partial<Record<JobName, JobHandler>>;
 
 /** How often the webhook sweep picks up events that weren't (or couldn't be) processed. */
 export const WEBHOOK_SWEEP_EVERY_MS = 30_000;
+
+/** How often the wallet cache and the ledger are checked against each other. */
+export const RECONCILE_EVERY_MS = 60 * 60 * 1_000;
 
 /** How often notifications stuck in PENDING are queued again. */
 export const REQUEUE_NOTIFICATIONS_EVERY_MS = 60_000;
@@ -64,6 +69,7 @@ export function createJobHandlers(deps: {
   const idempotency = new IdempotencyService(deps.db);
   const notifications = new NotificationService(deps.db, deps.queues.notifications);
   const delivery = new NotificationDelivery(deps.db, deps.senders);
+  const reconciliation = new ReconciliationService(deps.db);
   // The last attempt marks the notification FAILED before the error is rethrown.
   const deliver = (job: Job) =>
     delivery.deliver((job.data as DeliverNotificationData).notificationId, {
@@ -88,6 +94,30 @@ export function createJobHandlers(deps: {
     'send-sms': deliver,
     'send-push': deliver,
     'requeue-notifications': async () => ({ queued: await notifications.requeuePending() }),
+    // Reports only: drift is logged loudly and audited for a person, never auto-corrected.
+    'reconcile-transactions': async () => {
+      const report = await reconciliation.run();
+      if (!report.ok) {
+        deps.logger.error(
+          {
+            driftedWallets: report.wallets.drifted.map((d) => d.walletId),
+            ledger: report.ledger,
+            invariants: report.invariants,
+          },
+          'reconciliation found drift',
+        );
+        await recordAudit(deps.db, {
+          action: 'reconciliation.drift_detected',
+          actor: { type: 'SYSTEM' },
+          metadata: {
+            driftedWallets: report.wallets.drifted,
+            ledger: report.ledger,
+            invariants: report.invariants,
+          },
+        });
+      }
+      return { ok: report.ok, drifted: report.wallets.drifted.length, attention: report.attention };
+    },
     // An outbox event → the notifications it means (none for most internal events). Each
     // notify() is idempotent per event, so a redelivered event creates nothing new.
     'send-notification': async (job) => {
@@ -162,6 +192,11 @@ export async function scheduleRecurringJobs(queues: JobQueues): Promise<void> {
     'requeue-notifications',
     { every: REQUEUE_NOTIFICATIONS_EVERY_MS },
     { name: 'requeue-notifications', data: {} },
+  );
+  await queues.maintenance.upsertJobScheduler(
+    'reconcile-transactions',
+    { every: RECONCILE_EVERY_MS },
+    { name: 'reconcile-transactions', data: {} },
   );
 }
 

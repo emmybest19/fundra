@@ -78,6 +78,12 @@ export const ADMIN_ROUTES: readonly AdminRoute[] = [
     handler: 'reopenWallet',
   },
 
+  {
+    method: 'get',
+    path: '/reconciliation',
+    permission: 'transactions:read',
+    handler: 'reconcile',
+  },
   { method: 'get', path: '/webhooks', permission: 'webhooks:read', handler: 'listWebhooks' },
   { method: 'get', path: '/audit-logs', permission: 'audit_logs:read', handler: 'listAuditLogs' },
 

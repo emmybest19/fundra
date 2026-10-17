@@ -52,6 +52,7 @@ function app() {
       wallets: stand_in,
       reversals: stand_in,
       roles: stand_in,
+      reconciliation: stand_in,
       authenticate: fakeAuthenticate,
     } as unknown as AdminRouterDependencies),
   );
@@ -134,6 +135,7 @@ describe('admin permission matrix', () => {
       'post /wallets/:id/freeze': 'wallets:freeze',
       'post /wallets/:id/unfreeze': 'wallets:freeze',
       'post /wallets/:id/reopen': 'wallets:freeze',
+      'get /reconciliation': 'transactions:read',
       'get /webhooks': 'webhooks:read',
       'get /audit-logs': 'audit_logs:read',
       'get /roles': 'roles:assign',

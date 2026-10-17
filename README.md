@@ -125,7 +125,7 @@ docs/              project definition, architecture, case study, API, security
 | Notifications (Stage 17): records, email/SMS/push delivery jobs (mock senders), in-app feed (`/notifications`), every business event wired | Done. Email/SMS/push providers are mocks until deployment |
 | Beneficiaries (Stage 18): `/beneficiaries` (saved Fundra and bank recipients) | Done |
 | Admin (Stage 19): `/admin/*` (users, KYC review, transactions and reversals, wallets, webhooks, audit trail, settings) | Done, including role assignment; every route is tested against every role |
-| Reconciliation & statements (Stage 20) | Next |
+| Reconciliation & statements (Stage 20) | In progress (reconciliation done; statements next) |
 | Business modules, CI, deployment | Not started |
 
 Stage-by-stage progress: [ROADMAP.md](docs/ROADMAP.md).

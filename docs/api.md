@@ -774,6 +774,7 @@ Staff only: each route needs one permission (see [ROLE_PERMISSIONS](../src/commo
 | `GET /admin/wallets/:id` | `wallets:read` | |
 | `POST /admin/wallets/:id/freeze` · `/unfreeze` | `wallets:freeze` | `{ "reason": "…" }` (audit only, never shown to the owner) |
 | `POST /admin/wallets/:id/reopen` | `wallets:freeze` | |
+| `GET /admin/reconciliation` | `transactions:read` | Runs the checks now and returns the report (read-only) |
 | `GET /admin/webhooks` | `webhooks:read` | `status` |
 | `GET /admin/audit-logs` | `audit_logs:read` | `actorUserId`, `action`, `resourceType`, `resourceId`, `from`, `to` |
 | `GET /admin/roles` | `roles:assign` | |

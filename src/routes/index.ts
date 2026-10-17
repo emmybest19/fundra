@@ -5,6 +5,7 @@ import type { PrismaClient } from '../generated/prisma/client.ts';
 import { createAuthenticate } from '../middleware/auth.middleware.ts';
 import type { RateLimitStore } from '../middleware/rate-limit.middleware.ts';
 import { AdminRoleService } from '../modules/admin/admin-roles.service.ts';
+import { ReconciliationService } from '../modules/ledger/reconciliation.service.ts';
 import { AdminSettingsService } from '../modules/admin/admin-settings.service.ts';
 import { createAdminRouter } from '../modules/admin/admin.routes.ts';
 import { AdminService } from '../modules/admin/admin.service.ts';
@@ -154,6 +155,7 @@ export function createApiRouter({
       wallets,
       reversals: new TransferReversalService(db),
       roles: new AdminRoleService(db),
+      reconciliation: new ReconciliationService(db),
       authenticate,
     }),
   );

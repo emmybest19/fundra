@@ -56,6 +56,8 @@ export const AUDIT_ACTIONS = [
   'payment.failed',
   'payment.refunded',
   'transaction.reversed',
+  // Reconciliation (Stage 20)
+  'reconciliation.drift_detected',
   // Beneficiaries (Stage 18)
   'beneficiary.created',
   'beneficiary.updated',
